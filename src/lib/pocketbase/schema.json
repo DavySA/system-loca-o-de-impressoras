@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-06T13:59:08.667Z",
+  "generatedAt": "2026-10-06T14:22:56.331Z",
   "collections": [
     {
       "name": "users",
@@ -43,7 +43,7 @@
           "type": "select",
           "required": true,
           "system": false,
-          "selectValues": ["administrador", "tecnico", "cliente"]
+          "selectValues": ["administrador", "tecnico", "cliente", "operador"]
         },
         {
           "name": "cliente_id",
@@ -823,6 +823,30 @@
           "required": false,
           "system": false,
           "autodateTriggers": ["onCreate", "onUpdate"]
+        },
+        {
+          "name": "whatsapp",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "instagram",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "facebook",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "linkedin",
+          "type": "text",
+          "required": false,
+          "system": false
         }
       ],
       "indexes": []
@@ -1212,6 +1236,61 @@
           "required": false,
           "system": false,
           "autodateTriggers": ["onCreate", "onUpdate"]
+        },
+        {
+          "name": "equipamento_id",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "equipamentos"
+        },
+        {
+          "name": "contador_anterior_mono",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "contador_anterior_color",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "contador_abertura_mono",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "contador_abertura_color",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "contador_fechamento_mono",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "contador_fechamento_color",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "producao_mono",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "producao_color",
+          "type": "number",
+          "required": false,
+          "system": false
         }
       ],
       "indexes": [

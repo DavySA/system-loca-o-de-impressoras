@@ -38,9 +38,12 @@ import {
 } from '@/components/ui/select'
 import type { Servico } from '@/types'
 
+import { useAuth } from '@/context/AuthContext'
+
 export default function Servicos() {
   const { toast } = useToast()
-
+  const { user } = useAuth()
+  const isOperador = user?.role === 'operador'
   const [servicos, setServicos] = useState<Servico[]>([])
   const [isLoading, setIsLoading] = useState(true)
 
@@ -297,15 +300,17 @@ export default function Servicos() {
                 >
                   <Edit className="w-4 h-4" />
                 </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => handleOpenDelete(servico)}
-                  className="h-8 w-8 p-0 text-gray-500 hover:text-red-600"
-                  title="Excluir"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </Button>
+                {!isOperador && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleOpenDelete(servico)}
+                    className="h-8 w-8 p-0 text-gray-500 hover:text-red-600"
+                    title="Excluir"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </Button>
+                )}
               </div>
             </Card>
           ))}

@@ -40,9 +40,13 @@ import {
 import { Badge } from '@/components/ui/badge'
 import type { Suprimento, Equipamento, TipoSuprimento } from '@/types'
 
+import { useAuth } from '@/context/AuthContext'
+
 export default function Suprimentos() {
   const navigate = useNavigate()
   const { toast } = useToast()
+  const { user } = useAuth()
+  const isOperador = user?.role === 'operador'
 
   const [suprimentos, setSuprimentos] = useState<Suprimento[]>([])
   const [equipamentos, setEquipamentos] = useState<Equipamento[]>([])
@@ -511,15 +515,17 @@ export default function Suprimentos() {
                         </span>
                       </td>
                       <td className="py-3 px-4 text-right">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={(e) => handleDelete(s.id, e)}
-                          className="h-7 w-7 p-0 text-red-500 hover:text-red-700 hover:bg-red-50"
-                          title="Excluir"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </Button>
+                        {!isOperador && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={(e) => handleDelete(s.id, e)}
+                            className="h-7 w-7 p-0 text-red-500 hover:text-red-700 hover:bg-red-50"
+                            title="Excluir"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </Button>
+                        )}
                       </td>
                     </tr>
                   )

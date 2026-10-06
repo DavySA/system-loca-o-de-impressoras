@@ -7,19 +7,24 @@ import {
   ClipboardList,
   Receipt,
   Wrench,
+  Settings,
   LogOut,
-  Bell,
   Menu,
   X,
+  Bell,
   BarChart3,
   Package,
-  Settings,
   Layers,
+  Phone,
+  Mail,
+  Globe,
+  Share2,
 } from 'lucide-react'
 import { useAuth } from '@/context/AuthContext'
 import { ordensServicoService } from '@/services/ordensServico'
 import { faturasService } from '@/services/faturas'
 import { contratosService } from '@/services/contratos'
+import { configuracoesService } from '@/services/configuracoes'
 import { useRealtime } from '@/hooks/use-realtime'
 import { cn } from '@/lib/utils'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
@@ -34,6 +39,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { formatDate, formatCurrency } from '@/lib/formatters'
+import type { ConfiguracoesEmpresa } from '@/types'
 
 interface LayoutProps {
   children?: React.ReactNode
@@ -45,6 +51,19 @@ export default function Layout({ children }: LayoutProps) {
   const navigate = useNavigate()
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false)
   const [openOsCount, setOpenOsCount] = useState<number>(0)
+  const [empresaConfig, setEmpresaConfig] = useState<ConfiguracoesEmpresa | null>(null)
+
+  useEffect(() => {
+    configuracoesService.get().then((cfg) => {
+      if (cfg) setEmpresaConfig(cfg)
+    })
+  }, [])
+
+  useRealtime('configuracoes_empresa', () => {
+    configuracoesService.get().then((cfg) => {
+      if (cfg) setEmpresaConfig(cfg)
+    })
+  })
 
   // Alertas de notificações do sistema para o sino
   const [notificacoes, setNotificacoes] = useState<
@@ -180,15 +199,25 @@ export default function Layout({ children }: LayoutProps) {
   }, [location.pathname])
 
   const navItems = [
-    { label: 'Dashboard', path: '/dashboard', icon: LayoutGrid, roles: ['administrador'] },
-    { label: 'Clientes', path: '/clientes', icon: Users, roles: ['administrador'] },
-    { label: 'Equipamentos', path: '/equipamentos', icon: Printer, roles: ['administrador'] },
+    {
+      label: 'Dashboard',
+      path: '/dashboard',
+      icon: LayoutGrid,
+      roles: ['administrador', 'cliente'],
+    },
+    { label: 'Clientes', path: '/clientes', icon: Users, roles: ['administrador', 'operador'] },
+    {
+      label: 'Equipamentos',
+      path: '/equipamentos',
+      icon: Printer,
+      roles: ['administrador', 'operador'],
+    },
     {
       label: 'Ordens de Serviço',
       path: '/ordens-de-servico',
       icon: ClipboardList,
       badge: openOsCount,
-      roles: ['administrador', 'tecnico', 'cliente'],
+      roles: ['administrador', 'tecnico', 'cliente', 'operador'],
     },
     {
       label: 'Faturamento',
@@ -206,13 +235,13 @@ export default function Layout({ children }: LayoutProps) {
       label: 'Suprimentos',
       path: '/suprimentos',
       icon: Package,
-      roles: ['administrador'],
+      roles: ['administrador', 'operador'],
     },
     {
       label: 'Gráfica Rápida',
       path: '/grafica-rapida',
       icon: Layers,
-      roles: ['administrador'],
+      roles: ['administrador', 'operador'],
     },
     {
       label: 'Relatórios',
@@ -220,7 +249,7 @@ export default function Layout({ children }: LayoutProps) {
       icon: BarChart3,
       roles: ['administrador'],
     },
-    { label: 'Serviços', path: '/servicos', icon: Wrench, roles: ['administrador'] },
+    { label: 'Serviços', path: '/servicos', icon: Wrench, roles: ['administrador', 'operador'] },
     { label: 'Usuários', path: '/usuarios', icon: Users, roles: ['administrador'] },
     { label: 'Personalizar', path: '/personalizar', icon: Settings, roles: ['administrador'] },
   ].filter((item) => item.roles.includes(role))
@@ -491,10 +520,106 @@ export default function Layout({ children }: LayoutProps) {
           <div className="max-w-7xl mx-auto animate-in fade-in-50 duration-200">{children}</div>
         </main>
 
-        {/* Footer */}
-        <footer className="py-4 px-6 bg-white border-t border-[#E5E7EB] text-center text-xs text-gray-500">
-          © {new Date().getFullYear()} TD Technology System ERP — Sistema de Gestão de Locação de
-          Impressoras
+        {/* Footer com contatos dinâmicos da TD Technology */}
+        <footer className="py-4 px-4 sm:px-6 bg-white border-t border-[#E5E7EB] text-xs text-gray-600">
+          <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-3 text-center md:text-left">
+            {/* Esquerda: Copyright e Site Fallback */}
+            <div className="flex flex-wrap items-center justify-center md:justify-start gap-x-2 gap-y-1">
+              <span className="font-semibold text-gray-800">
+                © {new Date().getFullYear()}{' '}
+                {empresaConfig?.nome_fantasia || 'TD Technology System ERP'}
+              </span>
+              <span className="hidden sm:inline text-gray-300">•</span>
+              <a
+                href={
+                  empresaConfig?.website
+                    ? empresaConfig.website.startsWith('http')
+                      ? empresaConfig.website
+                      : `https://${empresaConfig.website}`
+                    : 'https://tdtechnology.com.br'
+                }
+                target="_blank"
+                rel="noreferrer"
+                className="text-blue-600 hover:underline font-medium inline-flex items-center gap-1"
+              >
+                <Globe className="w-3.5 h-3.5" />
+                {empresaConfig?.website || 'tdtechnology.com.br'}
+              </a>
+            </div>
+
+            {/* Direita: Contatos & Redes Sociais */}
+            <div className="flex flex-wrap items-center justify-center md:justify-end gap-x-4 gap-y-1.5 text-gray-500 text-[11px]">
+              {/* Telefone / WhatsApp */}
+              {(empresaConfig?.telefone || empresaConfig?.whatsapp) && (
+                <a
+                  href={`tel:${(empresaConfig.whatsapp || empresaConfig.telefone || '').replace(/\D/g, '')}`}
+                  className="flex items-center gap-1 hover:text-emerald-700 transition-colors"
+                >
+                  <Phone className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>{empresaConfig.whatsapp || empresaConfig.telefone}</span>
+                </a>
+              )}
+
+              {/* E-mail */}
+              {empresaConfig?.email && (
+                <a
+                  href={`mailto:${empresaConfig.email}`}
+                  className="flex items-center gap-1 hover:text-blue-700 transition-colors"
+                >
+                  <Mail className="w-3.5 h-3.5 text-blue-600" />
+                  <span>{empresaConfig.email}</span>
+                </a>
+              )}
+
+              {/* Instagram */}
+              {empresaConfig?.instagram && (
+                <a
+                  href={
+                    empresaConfig.instagram.startsWith('http')
+                      ? empresaConfig.instagram
+                      : `https://instagram.com/${empresaConfig.instagram.replace('@', '')}`
+                  }
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex items-center gap-1 text-pink-600 hover:text-pink-700 font-medium"
+                >
+                  <Share2 className="w-3.5 h-3.5" />
+                  <span>
+                    {empresaConfig.instagram.startsWith('@')
+                      ? empresaConfig.instagram
+                      : `@${empresaConfig.instagram.replace('https://instagram.com/', '').replace('/', '')}`}
+                  </span>
+                </a>
+              )}
+
+              {/* Facebook / LinkedIn */}
+              {empresaConfig?.facebook && (
+                <a
+                  href={
+                    empresaConfig.facebook.startsWith('http')
+                      ? empresaConfig.facebook
+                      : `https://${empresaConfig.facebook}`
+                  }
+                  target="_blank"
+                  rel="noreferrer"
+                  className="hover:text-blue-800 transition-colors"
+                >
+                  <span>{empresaConfig.facebook}</span>
+                </a>
+              )}
+
+              {/* Fallback caso não haja contatos configurados */}
+              {!empresaConfig?.telefone &&
+                !empresaConfig?.whatsapp &&
+                !empresaConfig?.email &&
+                !empresaConfig?.instagram &&
+                !empresaConfig?.facebook && (
+                  <span className="text-gray-400">
+                    Soluções e Outsourcing em Impressão Corporativa
+                  </span>
+                )}
+            </div>
+          </div>
         </footer>
       </div>
     </div>

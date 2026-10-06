@@ -13,6 +13,10 @@ import {
   Calendar,
   AlertCircle,
   Calculator,
+  Layers,
+  Sparkles,
+  CheckCircle2,
+  Users,
 } from 'lucide-react'
 import { faturasService } from '@/services/faturas'
 import { clientesService } from '@/services/clientes'
@@ -51,6 +55,8 @@ export default function Faturamento() {
   const location = useLocation()
 
   const isClienteUser = user?.role === 'cliente'
+  const isOperador = user?.role === 'operador'
+  const isAdmin = user?.role === 'administrador'
   const clienteIdVinculado = user?.cliente_id
 
   const [faturas, setFaturas] = useState<Fatura[]>([])
@@ -71,6 +77,20 @@ export default function Faturamento() {
   const [clienteContratos, setClienteContratos] = useState<Contrato[]>([])
   const [selectedContratoId, setSelectedContratoId] = useState('')
   const [mesReferencia, setMesReferencia] = useState('')
+
+  // Modal Faturamento em Lote
+  const [isModalLoteOpen, setIsModalLoteOpen] = useState(false)
+  const [mesReferenciaLote, setMesReferenciaLote] = useState('')
+  const [isExecutandoLote, setIsExecutandoLote] = useState(false)
+  const [resultadoLote, setResultadoLote] = useState<{
+    geradas: number
+    puladas: number
+    detalhes: {
+      clienteNome: string
+      status: 'gerada' | 'ja_existe' | 'sem_contrato'
+      valor?: number
+    }[]
+  } | null>(null)
 
   // Leituras por equipamento
   const [leituraAnteriorMono, setLeituraAnteriorMono] = useState(0)
@@ -170,6 +190,160 @@ export default function Faturamento() {
     }
 
     setIsModalOpen(true)
+  }
+
+  // Abertura do Modal de Lote
+  const handleOpenLote = () => {
+    const now = new Date()
+    const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+    setMesReferenciaLote(currentMonth)
+    setResultadoLote(null)
+    setIsModalLoteOpen(true)
+  }
+
+  // Clientes elegíveis para o faturamento em lote no período selecionado
+  const clientesAtivosComContrato = useMemo(() => {
+    return clientes.filter((c) => {
+      if (c.status !== 'ativo') return false
+      const temContrato = contratos.some((ct) => ct.cliente_id === c.id && ct.status === 'ativo')
+      return temContrato
+    })
+  }, [clientes, contratos])
+
+  const analiseLote = useMemo(() => {
+    if (!mesReferenciaLote) {
+      return { aGerar: [], jaFaturados: [], semContrato: [] }
+    }
+
+    const aGerar: { cliente: Cliente; contratos: Contrato[] }[] = []
+    const jaFaturados: { cliente: Cliente; fatura: Fatura }[] = []
+    const semContrato: Cliente[] = []
+
+    clientes.forEach((cli) => {
+      if (cli.status !== 'ativo') return
+      const cliConts = contratos.filter((ct) => ct.cliente_id === cli.id && ct.status === 'ativo')
+      if (cliConts.length === 0) {
+        semContrato.push(cli)
+        return
+      }
+
+      // Checar se já possui fatura para esse mês
+      const fatExistente = faturas.find(
+        (f) =>
+          f.cliente_id === cli.id &&
+          f.mes_referencia === mesReferenciaLote &&
+          f.status !== 'cancelada',
+      )
+
+      if (fatExistente) {
+        jaFaturados.push({ cliente: cli, fatura: fatExistente })
+      } else {
+        aGerar.push({ cliente: cli, contratos: cliConts })
+      }
+    })
+
+    return { aGerar, jaFaturados, semContrato }
+  }, [clientes, contratos, faturas, mesReferenciaLote])
+
+  const handleExecutarFaturamentoLote = async () => {
+    if (!mesReferenciaLote) return
+    setIsExecutandoLote(true)
+
+    const detalhes: {
+      clienteNome: string
+      status: 'gerada' | 'ja_existe' | 'sem_contrato'
+      valor?: number
+    }[] = []
+    let geradasCount = 0
+    let puladasCount = 0
+
+    try {
+      // 1. Processar cada cliente elegível
+      for (const item of analiseLote.aGerar) {
+        const cli = item.cliente
+        const conts = item.contratos
+
+        // Para cada contrato do cliente, gerar fatura (se houver mais de um ou o principal)
+        for (const ct of conts) {
+          const eq = equipamentos.find((e) => e.id === ct.equipamento_id)
+          const monoAnterior = eq?.contador_monocromatico || 0
+          const colorAnterior = eq?.contador_colorido || 0
+
+          const isApenasExcedentes = ct.modalidade === 'apenas_excedentes'
+          const paginasContratadas = isApenasExcedentes ? 0 : ct.paginas_contratadas_mensais || 0
+          const valorBaseAluguel = ct.valor_mensal || 0
+          const valorScanner = ct.valor_scanner || 0
+          const valorTotal = valorBaseAluguel + valorScanner
+
+          await faturasService.create({
+            cliente_id: cli.id,
+            contrato_id: ct.id,
+            mes_referencia: mesReferenciaLote,
+            paginas_contratadas: paginasContratadas,
+            paginas_consumidas: paginasContratadas, // franquia contratada base inicial
+            paginas_excedentes: 0,
+            valor_base: valorTotal,
+            valor_excedente: 0,
+            valor_total: valorTotal,
+            leitura_anterior_mono: monoAnterior,
+            leitura_atual_mono: monoAnterior + paginasContratadas,
+            leitura_anterior_color: colorAnterior,
+            leitura_atual_color: colorAnterior,
+            desconto: 0,
+            acrescimo_servicos: 0,
+            observacoes: `Fatura gerada automaticamente em lote no ciclo recorrente do mês ${formatMonthYear(mesReferenciaLote)}.`,
+            status: 'gerada',
+          })
+
+          geradasCount++
+          detalhes.push({
+            clienteNome: cli.nome_razao_social,
+            status: 'gerada',
+            valor: valorTotal,
+          })
+        }
+      }
+
+      // Adicionar os que já existiam
+      analiseLote.jaFaturados.forEach((j) => {
+        puladasCount++
+        detalhes.push({
+          clienteNome: j.cliente.nome_razao_social,
+          status: 'ja_existe',
+          valor: j.fatura.valor_total,
+        })
+      })
+
+      // Adicionar sem contrato
+      analiseLote.semContrato.forEach((sc) => {
+        puladasCount++
+        detalhes.push({
+          clienteNome: sc.nome_razao_social,
+          status: 'sem_contrato',
+        })
+      })
+
+      setResultadoLote({
+        geradas: geradasCount,
+        puladas: puladasCount,
+        detalhes,
+      })
+
+      toast({
+        title: 'Faturamento em lote concluído!',
+        description: `${geradasCount} fatura(s) gerada(s) com sucesso. ${puladasCount} pulada(s).`,
+      })
+
+      await loadData()
+    } catch (err: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Erro no faturamento em lote',
+        description: err.message || 'Ocorreu uma falha durante o processamento.',
+      })
+    } finally {
+      setIsExecutandoLote(false)
+    }
   }
 
   const resetLeituras = () => {
@@ -539,12 +713,25 @@ export default function Faturamento() {
           </p>
         </div>
         {!isClienteUser && (
-          <Button
-            onClick={() => handleOpenCreate()}
-            className="bg-blue-600 hover:bg-blue-700 text-white shadow-xs flex items-center gap-1.5"
-          >
-            <Plus className="w-4 h-4" /> Gerar Fatura
-          </Button>
+          <div className="flex items-center gap-2">
+            {isAdmin && (
+              <Button
+                onClick={handleOpenLote}
+                variant="outline"
+                className="border-blue-300 text-blue-700 hover:bg-blue-50 flex items-center gap-1.5 font-medium shadow-xs"
+              >
+                <Sparkles className="w-4 h-4 text-blue-600" /> Gerar faturas do mês em lote
+              </Button>
+            )}
+            {!isOperador && (
+              <Button
+                onClick={() => handleOpenCreate()}
+                className="bg-blue-600 hover:bg-blue-700 text-white shadow-xs flex items-center gap-1.5"
+              >
+                <Plus className="w-4 h-4" /> Gerar Fatura Individual
+              </Button>
+            )}
+          </div>
         )}
       </div>
 
@@ -717,7 +904,7 @@ export default function Faturamento() {
                             <CheckCircle className="w-4 h-4" />
                           </Button>
                         )}
-                        {f.status !== 'cancelada' && f.status !== 'paga' && (
+                        {f.status !== 'cancelada' && f.status !== 'paga' && !isOperador && (
                           <Button
                             variant="ghost"
                             size="sm"
@@ -1037,6 +1224,248 @@ export default function Faturamento() {
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal Faturamento Recorrente em Lote */}
+      <Dialog open={isModalLoteOpen} onOpenChange={setIsModalLoteOpen}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-gray-900">
+              <Sparkles className="w-5 h-5 text-blue-600" /> Gerar Faturas do Mês em Lote
+            </DialogTitle>
+          </DialogHeader>
+
+          {!resultadoLote ? (
+            <div className="space-y-4 pt-1">
+              <p className="text-xs text-gray-600 leading-relaxed">
+                Esta ação gera automaticamente as faturas do ciclo de locação recorrente para todos
+                os clientes ativos que possuam contrato vigente e que ainda não possuam fatura
+                emitida para o mês selecionado.
+              </p>
+
+              <div className="p-3.5 bg-gray-50 rounded-xl border border-gray-200 flex items-center justify-between gap-4">
+                <div>
+                  <Label
+                    htmlFor="lote-mes"
+                    className="text-xs font-semibold text-gray-700 block mb-1"
+                  >
+                    Mês de Referência do Faturamento
+                  </Label>
+                  <Input
+                    id="lote-mes"
+                    type="month"
+                    value={mesReferenciaLote}
+                    onChange={(e) => setMesReferenciaLote(e.target.value)}
+                    className="h-9 w-48 text-sm bg-white"
+                  />
+                </div>
+                <div className="text-right">
+                  <span className="text-[11px] text-gray-500 uppercase font-bold block">
+                    Total a Gerar
+                  </span>
+                  <span className="text-2xl font-bold text-blue-600 font-mono">
+                    {analiseLote.aGerar.length} cliente(s)
+                  </span>
+                </div>
+              </div>
+
+              {/* Resumo da Prévia */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="p-3 rounded-lg border border-emerald-200 bg-emerald-50/70 text-xs">
+                  <span className="text-emerald-800 font-bold flex items-center gap-1">
+                    <CheckCircle2 className="w-3.5 h-3.5" /> Faturas a Gerar
+                  </span>
+                  <p className="text-xl font-bold text-emerald-900 mt-1 font-mono">
+                    {analiseLote.aGerar.length}
+                  </p>
+                  <p className="text-[11px] text-emerald-700 mt-0.5">
+                    Clientes ativos com contrato e sem fatura
+                  </p>
+                </div>
+
+                <div className="p-3 rounded-lg border border-amber-200 bg-amber-50/70 text-xs">
+                  <span className="text-amber-800 font-bold flex items-center gap-1">
+                    <AlertCircle className="w-3.5 h-3.5" /> Já Faturados
+                  </span>
+                  <p className="text-xl font-bold text-amber-900 mt-1 font-mono">
+                    {analiseLote.jaFaturados.length}
+                  </p>
+                  <p className="text-[11px] text-amber-700 mt-0.5">
+                    Serão pulados para evitar duplicidade
+                  </p>
+                </div>
+
+                <div className="p-3 rounded-lg border border-gray-200 bg-gray-50 text-xs">
+                  <span className="text-gray-700 font-bold flex items-center gap-1">
+                    <Users className="w-3.5 h-3.5 text-gray-500" /> Sem Contrato
+                  </span>
+                  <p className="text-xl font-bold text-gray-800 mt-1 font-mono">
+                    {analiseLote.semContrato.length}
+                  </p>
+                  <p className="text-[11px] text-gray-500 mt-0.5">
+                    Clientes ativos sem contrato ativo
+                  </p>
+                </div>
+              </div>
+
+              {/* Lista dos que serão gerados */}
+              <div className="space-y-2">
+                <span className="text-xs font-bold text-gray-800 uppercase tracking-wide block">
+                  Clientes que receberão faturas ({analiseLote.aGerar.length})
+                </span>
+                <div className="max-h-40 overflow-y-auto border border-gray-200 rounded-lg divide-y divide-gray-100 text-xs">
+                  {analiseLote.aGerar.length === 0 ? (
+                    <div className="p-4 text-center text-gray-400">
+                      Nenhum cliente elegível para faturamento neste mês (todos já faturados ou sem
+                      contrato).
+                    </div>
+                  ) : (
+                    analiseLote.aGerar.map((item) => {
+                      const valorEstimado = item.contratos.reduce(
+                        (acc, ct) => acc + (ct.valor_mensal || 0) + (ct.valor_scanner || 0),
+                        0,
+                      )
+                      return (
+                        <div
+                          key={item.cliente.id}
+                          className="p-2.5 flex items-center justify-between hover:bg-gray-50"
+                        >
+                          <div>
+                            <p className="font-semibold text-gray-900">
+                              {item.cliente.nome_razao_social}
+                            </p>
+                            <p className="text-[11px] text-gray-500">
+                              {item.contratos.length} contrato(s) vinculado(s)
+                            </p>
+                          </div>
+                          <span className="font-mono font-bold text-gray-800">
+                            {formatCurrency(valorEstimado)}
+                          </span>
+                        </div>
+                      )
+                    })
+                  )}
+                </div>
+              </div>
+
+              {/* Lista dos que serão pulados */}
+              {analiseLote.jaFaturados.length > 0 && (
+                <div className="space-y-1.5 pt-1">
+                  <span className="text-xs font-bold text-amber-800 block">
+                    Clientes pulados (já possuem fatura em {formatMonthYear(mesReferenciaLote)}):
+                  </span>
+                  <div className="max-h-28 overflow-y-auto border border-amber-200 bg-amber-50/40 rounded-lg p-2 text-xs space-y-1 text-amber-900">
+                    {analiseLote.jaFaturados.map((item) => (
+                      <div key={item.cliente.id} className="flex items-center justify-between">
+                        <span>• {item.cliente.nome_razao_social}</span>
+                        <span className="font-mono text-[11px] text-amber-800">
+                          Fatura #{item.fatura.id.slice(0, 6).toUpperCase()} (
+                          {formatCurrency(item.fatura.valor_total)})
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <DialogFooter className="pt-2">
+                <Button type="button" variant="outline" onClick={() => setIsModalLoteOpen(false)}>
+                  Cancelar
+                </Button>
+                <Button
+                  type="button"
+                  onClick={handleExecutarFaturamentoLote}
+                  disabled={isExecutandoLote || analiseLote.aGerar.length === 0}
+                  className="bg-blue-600 hover:bg-blue-700 text-white font-semibold flex items-center gap-1.5"
+                >
+                  <Sparkles className="w-4 h-4" />
+                  {isExecutandoLote
+                    ? 'Processando Faturas...'
+                    : `Confirmar e Gerar ${analiseLote.aGerar.length} Fatura(s)`}
+                </Button>
+              </DialogFooter>
+            </div>
+          ) : (
+            /* Resumo Pós-Execução */
+            <div className="space-y-4 pt-1">
+              <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-center space-y-1">
+                <CheckCircle2 className="w-10 h-10 text-emerald-600 mx-auto" />
+                <h3 className="font-bold text-base">Faturamento em Lote Concluído!</h3>
+                <p className="text-xs text-emerald-700">
+                  O ciclo de faturamento foi processado e todas as faturas geradas já constam na
+                  listagem.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 text-center">
+                <div className="p-3 rounded-lg border border-emerald-200 bg-white">
+                  <span className="text-[11px] text-gray-500 uppercase font-bold block">
+                    Faturas Geradas
+                  </span>
+                  <span className="text-2xl font-bold text-emerald-600 font-mono">
+                    {resultadoLote.geradas}
+                  </span>
+                </div>
+                <div className="p-3 rounded-lg border border-amber-200 bg-white">
+                  <span className="text-[11px] text-gray-500 uppercase font-bold block">
+                    Clientes Pulados
+                  </span>
+                  <span className="text-2xl font-bold text-amber-600 font-mono">
+                    {resultadoLote.puladas}
+                  </span>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <span className="text-xs font-bold text-gray-800 uppercase tracking-wide block">
+                  Detalhamento por Cliente
+                </span>
+                <div className="max-h-48 overflow-y-auto border border-gray-200 rounded-lg divide-y divide-gray-100 text-xs">
+                  {resultadoLote.detalhes.map((det, idx) => (
+                    <div key={idx} className="p-2.5 flex items-center justify-between">
+                      <span className="font-medium text-gray-900">{det.clienteNome}</span>
+                      <div className="flex items-center gap-2">
+                        {det.valor !== undefined && (
+                          <span className="font-mono text-gray-700">
+                            {formatCurrency(det.valor)}
+                          </span>
+                        )}
+                        <span
+                          className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                            det.status === 'gerada'
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : det.status === 'ja_existe'
+                                ? 'bg-amber-100 text-amber-800'
+                                : 'bg-gray-100 text-gray-600'
+                          }`}
+                        >
+                          {det.status === 'gerada'
+                            ? 'Gerada'
+                            : det.status === 'ja_existe'
+                              ? 'Já existia'
+                              : 'Sem contrato'}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <DialogFooter className="pt-2">
+                <Button
+                  type="button"
+                  onClick={() => {
+                    setIsModalLoteOpen(false)
+                    setResultadoLote(null)
+                  }}
+                  className="bg-blue-600 hover:bg-blue-700 text-white w-full sm:w-auto"
+                >
+                  Concluir e Ver Faturas
+                </Button>
+              </DialogFooter>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
 

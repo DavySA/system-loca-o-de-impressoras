@@ -30,12 +30,16 @@ export default function Personalizar() {
     nome_fantasia: '',
     cnpj: '',
     inscricao_estadual: '',
-    endereco: '',
-    cidade: '',
-    uf: '',
     telefone: '',
     email: '',
     website: '',
+    whatsapp: '',
+    instagram: '',
+    facebook: '',
+    linkedin: '',
+    endereco: '',
+    cidade: '',
+    uf: '',
     mensagem_rodape: '',
   })
   const [logoFile, setLogoFile] = useState<File | null>(null)
@@ -56,12 +60,16 @@ export default function Personalizar() {
           nome_fantasia: data.nome_fantasia || '',
           cnpj: data.cnpj || '',
           inscricao_estadual: data.inscricao_estadual || '',
-          endereco: data.endereco || '',
-          cidade: data.cidade || '',
-          uf: data.uf || '',
           telefone: data.telefone || '',
           email: data.email || '',
           website: data.website || '',
+          whatsapp: data.whatsapp || '',
+          instagram: data.instagram || '',
+          facebook: data.facebook || '',
+          linkedin: data.linkedin || '',
+          endereco: data.endereco || '',
+          cidade: data.cidade || '',
+          uf: data.uf || '',
           mensagem_rodape: data.mensagem_rodape || '',
         })
         if (data.logo) {
@@ -251,8 +259,48 @@ export default function Personalizar() {
                     id="cfg-web"
                     value={formData.website}
                     onChange={(e) => setFormData({ ...formData, website: e.target.value })}
-                    placeholder="Ex: www.tdtechnology.com.br"
+                    placeholder="Ex: tdtechnology.com.br"
                   />
+                </div>
+              </div>
+
+              {/* Redes Sociais e Contatos para o Rodapé */}
+              <div className="pt-4 border-t border-gray-100">
+                <h4 className="text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">
+                  Contatos e Redes Sociais do Rodapé
+                </h4>
+                <p className="text-xs text-gray-500 mb-3">
+                  Estes dados são exibidos no rodapé inferior do sistema e permitem contato rápido
+                  com a TD Technology.
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="cfg-wpp">WhatsApp (com DDD)</Label>
+                    <Input
+                      id="cfg-wpp"
+                      value={formData.whatsapp}
+                      onChange={(e) => setFormData({ ...formData, whatsapp: e.target.value })}
+                      placeholder="Ex: (11) 99999-9999"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="cfg-insta">Instagram</Label>
+                    <Input
+                      id="cfg-insta"
+                      value={formData.instagram}
+                      onChange={(e) => setFormData({ ...formData, instagram: e.target.value })}
+                      placeholder="Ex: @tdtechnology"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="cfg-fb">Facebook / LinkedIn</Label>
+                    <Input
+                      id="cfg-fb"
+                      value={formData.facebook}
+                      onChange={(e) => setFormData({ ...formData, facebook: e.target.value })}
+                      placeholder="Ex: tdtechnology.oficial"
+                    />
+                  </div>
                 </div>
               </div>
             </CardContent>
@@ -305,7 +353,7 @@ export default function Personalizar() {
           </Card>
         </form>
 
-        {/* Pré-visualização do Cabeçalho Impresso */}
+        {/* Pré-visualização do Cabeçalho Impresso e Rodapé */}
         <div className="space-y-4">
           <Card className="border border-gray-200 shadow-xs sticky top-20">
             <CardHeader className="pb-3">
@@ -388,6 +436,51 @@ export default function Personalizar() {
                     Na impressão e espelho das <strong>Faturas de Locação</strong>.
                   </li>
                 </ul>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Prévia do Rodapé */}
+          <Card className="border border-gray-200 shadow-xs">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-xs font-bold uppercase tracking-wider text-gray-500 flex items-center gap-2">
+                <Globe className="w-4 h-4 text-gray-700" /> Prévia do Rodapé do Sistema
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="p-3 bg-gray-50 border border-gray-200 rounded-lg text-xs space-y-2 text-gray-600">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-200 pb-2">
+                  <span className="font-semibold text-gray-800">
+                    © 2025 TD Technology System ERP
+                  </span>
+                  <span className="text-[11px] text-blue-600 font-mono">
+                    {formData.website || 'tdtechnology.com.br'}
+                  </span>
+                </div>
+                <div className="flex flex-wrap items-center gap-3 text-[11px]">
+                  {(formData.telefone || formData.whatsapp) && (
+                    <span className="flex items-center gap-1 text-gray-700">
+                      <Phone className="w-3 h-3 text-emerald-600" />
+                      {formData.whatsapp || formData.telefone}
+                    </span>
+                  )}
+                  {formData.email && (
+                    <span className="flex items-center gap-1 text-gray-700">
+                      <Mail className="w-3 h-3 text-blue-600" />
+                      {formData.email}
+                    </span>
+                  )}
+                  {formData.instagram && (
+                    <span className="flex items-center gap-1 text-pink-600 font-medium">
+                      Instagram: {formData.instagram}
+                    </span>
+                  )}
+                  {formData.facebook && (
+                    <span className="flex items-center gap-1 text-blue-700 font-medium">
+                      {formData.facebook}
+                    </span>
+                  )}
+                </div>
               </div>
             </CardContent>
           </Card>

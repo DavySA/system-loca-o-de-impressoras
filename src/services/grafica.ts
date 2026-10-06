@@ -38,6 +38,7 @@ export const graficaService = {
     return pb.collection('grafica_caixas').getFullList<GraficaCaixa>({
       filter: filter || '',
       sort: '-data,-created',
+      expand: 'equipamento_id',
     })
   },
 
@@ -46,6 +47,7 @@ export const graficaService = {
       const records = await pb.collection('grafica_caixas').getList<GraficaCaixa>(1, 1, {
         filter: 'status = "aberto"',
         sort: '-data_abertura',
+        expand: 'equipamento_id',
       })
       return records.items[0] || null
     } catch {
@@ -54,12 +56,31 @@ export const graficaService = {
   },
 
   async getCaixaById(id: string): Promise<GraficaCaixa> {
-    return pb.collection('grafica_caixas').getOne<GraficaCaixa>(id)
+    return pb.collection('grafica_caixas').getOne<GraficaCaixa>(id, {
+      expand: 'equipamento_id',
+    })
+  },
+
+  async getUltimoCaixaFechadoPorEquipamento(equipamentoId: string): Promise<GraficaCaixa | null> {
+    try {
+      const records = await pb.collection('grafica_caixas').getList<GraficaCaixa>(1, 1, {
+        filter: `equipamento_id = "${equipamentoId}" && status = "fechado"`,
+        sort: '-data_fechamento,-created',
+      })
+      return records.items[0] || null
+    } catch {
+      return null
+    }
   },
 
   async abrirCaixa(data: {
     operador: string
     saldo_inicial: number
+    equipamento_id?: string
+    contador_anterior_mono?: number
+    contador_anterior_color?: number
+    contador_abertura_mono?: number
+    contador_abertura_color?: number
     observacoes_abertura?: string
     contadoresIniciais?: {
       equipamento_id: string
@@ -76,10 +97,15 @@ export const graficaService = {
       operador: data.operador,
       status: 'aberto',
       data_abertura: hojeStr,
+      equipamento_id: data.equipamento_id || undefined,
       saldo_inicial: Number(data.saldo_inicial) || 0,
       total_entradas: 0,
       total_custo_insumos: 0,
       lucro_total: 0,
+      contador_anterior_mono: Number(data.contador_anterior_mono) || 0,
+      contador_anterior_color: Number(data.contador_anterior_color) || 0,
+      contador_abertura_mono: Number(data.contador_abertura_mono) || 0,
+      contador_abertura_color: Number(data.contador_abertura_color) || 0,
       observacoes_abertura: data.observacoes_abertura || '',
     })
 
@@ -106,6 +132,8 @@ export const graficaService = {
     data: {
       observacoes_fechamento?: string
       saldo_final_dinheiro?: number
+      contador_fechamento_mono?: number
+      contador_fechamento_color?: number
       contadoresFinais?: {
         contador_id?: string
         equipamento_id: string
@@ -128,6 +156,18 @@ export const graficaService = {
       data.saldo_final_dinheiro !== undefined
         ? data.saldo_final_dinheiro
         : (caixaAtual.saldo_inicial || 0) + totalEntradas
+
+    const fMonoPrincipal =
+      data.contador_fechamento_mono !== undefined
+        ? Number(data.contador_fechamento_mono)
+        : Number(caixaAtual.contador_abertura_mono || 0)
+    const fColorPrincipal =
+      data.contador_fechamento_color !== undefined
+        ? Number(data.contador_fechamento_color)
+        : Number(caixaAtual.contador_abertura_color || 0)
+
+    const prodMono = Math.max(0, fMonoPrincipal - (caixaAtual.contador_abertura_mono || 0))
+    const prodColor = Math.max(0, fColorPrincipal - (caixaAtual.contador_abertura_color || 0))
 
     // Atualizar contadores finais e calcular deltas
     if (data.contadoresFinais) {
@@ -196,10 +236,26 @@ export const graficaService = {
       }
     }
 
+    // Se houver equipamento vinculado no caixa, atualizar os contadores do equipamento com o fechamento
+    if (caixaAtual.equipamento_id) {
+      try {
+        await pb.collection('equipamentos').update(caixaAtual.equipamento_id, {
+          contador_monocromatico: fMonoPrincipal,
+          contador_colorido: fColorPrincipal,
+        })
+      } catch (errEq) {
+        console.warn('Erro ao sincronizar contador do equipamento no fechamento:', errEq)
+      }
+    }
+
     const agora = new Date().toISOString()
     return pb.collection('grafica_caixas').update<GraficaCaixa>(caixaId, {
       status: 'fechado',
       data_fechamento: agora,
+      contador_fechamento_mono: fMonoPrincipal,
+      contador_fechamento_color: fColorPrincipal,
+      producao_mono: prodMono,
+      producao_color: prodColor,
       total_entradas: totalEntradas,
       total_custo_insumos: totalCustos,
       lucro_total: lucroTotal,

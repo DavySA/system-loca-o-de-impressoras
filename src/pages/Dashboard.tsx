@@ -29,9 +29,16 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import type { OrdemServico, Contrato } from '@/types'
 
+import PortalCliente from './PortalCliente'
+
 export default function Dashboard() {
   const { user } = useAuth()
   const navigate = useNavigate()
+
+  // Se o usuário logado tem perfil 'cliente', renderiza o Portal do Cliente Aprimorado
+  if (user?.role === 'cliente') {
+    return <PortalCliente />
+  }
 
   const [isLoading, setIsLoading] = useState(true)
   const [activeClientsCount, setActiveClientsCount] = useState(0)

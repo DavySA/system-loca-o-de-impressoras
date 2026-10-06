@@ -286,6 +286,12 @@ export default function Usuarios() {
             Cliente
           </span>
         )
+      case 'operador':
+        return (
+          <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200">
+            Operador
+          </span>
+        )
       default:
         return (
           <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-gray-100 text-gray-700 border border-gray-200">
@@ -304,7 +310,8 @@ export default function Usuarios() {
             Gerenciamento de Usuários
           </h1>
           <p className="text-xs text-gray-500 mt-0.5">
-            Controle de acessos, papéis (administrador, técnico, cliente) e redefinição de senhas
+            Controle de acessos, papéis (administrador, operador, técnico, cliente) e redefinição de
+            senhas
           </p>
         </div>
         <Button
@@ -316,7 +323,7 @@ export default function Usuarios() {
       </div>
 
       {/* Explicação dos papéis */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
         <div className="bg-white p-3.5 rounded-xl border border-gray-200 shadow-xs flex items-start gap-3">
           <div className="w-8 h-8 rounded-lg bg-purple-100 text-purple-700 flex items-center justify-center shrink-0">
             <Shield className="w-4 h-4" />
@@ -324,8 +331,21 @@ export default function Usuarios() {
           <div>
             <h4 className="text-xs font-bold text-gray-900">Administrador</h4>
             <p className="text-[11px] text-gray-500 mt-0.5">
-              Acesso total ao sistema: clientes, contratos, faturamento, equipamentos, configurações
-              e usuários.
+              Acesso total: clientes, contratos, faturamento em lote, relatórios, configurações e
+              usuários.
+            </p>
+          </div>
+        </div>
+
+        <div className="bg-white p-3.5 rounded-xl border border-amber-200 bg-amber-50/30 shadow-xs flex items-start gap-3">
+          <div className="w-8 h-8 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
+            <Shield className="w-4 h-4" />
+          </div>
+          <div>
+            <h4 className="text-xs font-bold text-amber-900">Operador</h4>
+            <p className="text-[11px] text-amber-800 mt-0.5">
+              Opera caixa da gráfica, cadastra clientes, equipamentos, suprimentos, serviços e O.S.{' '}
+              <strong>Sem permissão para apagar dados</strong>.
             </p>
           </div>
         </div>
@@ -337,8 +357,7 @@ export default function Usuarios() {
           <div>
             <h4 className="text-xs font-bold text-gray-900">Técnico</h4>
             <p className="text-[11px] text-gray-500 mt-0.5">
-              Acesso exclusivo às Ordens de Serviço (atendimentos, pareceres e atualizações de
-              status).
+              Acesso exclusivo às Ordens de Serviço (atendimentos técnicos, peças e laudos).
             </p>
           </div>
         </div>
@@ -350,8 +369,8 @@ export default function Usuarios() {
           <div>
             <h4 className="text-xs font-bold text-gray-900">Cliente</h4>
             <p className="text-[11px] text-gray-500 mt-0.5">
-              Visualiza apenas seu faturamento e abre chamados técnicos (se adimplente e sem O.S.
-              aberta).
+              Visualiza faturas próprias, contrato de locação e abre chamados de assistência
+              técnica.
             </p>
           </div>
         </div>
@@ -378,6 +397,7 @@ export default function Usuarios() {
             <SelectContent>
               <SelectItem value="todos">Todos os Papéis</SelectItem>
               <SelectItem value="administrador">Administrador</SelectItem>
+              <SelectItem value="operador">Operador</SelectItem>
               <SelectItem value="tecnico">Técnico</SelectItem>
               <SelectItem value="cliente">Cliente</SelectItem>
             </SelectContent>
@@ -521,6 +541,9 @@ export default function Usuarios() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="administrador">Administrador (Acesso total)</SelectItem>
+                  <SelectItem value="operador">
+                    Operador (Caixa, cadastros, sem exclusão)
+                  </SelectItem>
                   <SelectItem value="tecnico">Técnico (Apenas Ordens de Serviço)</SelectItem>
                   <SelectItem value="cliente">Cliente (Faturamento próprio e chamados)</SelectItem>
                 </SelectContent>

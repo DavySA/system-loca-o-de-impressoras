@@ -1,4 +1,4 @@
-export type UserRole = 'administrador' | 'tecnico' | 'cliente'
+export type UserRole = 'administrador' | 'tecnico' | 'cliente' | 'operador'
 
 export interface Cliente {
   id: string
@@ -176,6 +176,10 @@ export interface ConfiguracoesEmpresa {
   telefone?: string
   email?: string
   website?: string
+  whatsapp?: string
+  instagram?: string
+  facebook?: string
+  linkedin?: string
   logo?: string
   mensagem_rodape?: string
   created: string
@@ -253,15 +257,27 @@ export interface GraficaCaixa {
   status: 'aberto' | 'fechado'
   data_abertura: string
   data_fechamento?: string
+  equipamento_id?: string
   saldo_inicial?: number
   total_entradas?: number
   total_custo_insumos?: number
   lucro_total?: number
   saldo_final_dinheiro?: number
+  contador_anterior_mono?: number
+  contador_anterior_color?: number
+  contador_abertura_mono?: number
+  contador_abertura_color?: number
+  contador_fechamento_mono?: number
+  contador_fechamento_color?: number
+  producao_mono?: number
+  producao_color?: number
   observacoes_abertura?: string
   observacoes_fechamento?: string
   created: string
   updated: string
+  expand?: {
+    equipamento_id?: Equipamento
+  }
 }
 
 export interface GraficaCaixaContador {

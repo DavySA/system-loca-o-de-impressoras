@@ -40,28 +40,40 @@ export function App() {
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
 
           {/* Rotas Autenticadas com restrição por Perfil */}
-          {/* Administrador: Acesso Total */}
-          <Route element={<ProtectedRoute allowedRoles={['administrador']} />}>
+          {/* Dashboard executivo / Portal do Cliente */}
+          <Route element={<ProtectedRoute allowedRoles={['administrador', 'cliente']} />}>
             <Route path="/dashboard" element={<Dashboard />} />
+          </Route>
+
+          {/* Módulos operacionais: Administrador e Operador */}
+          <Route element={<ProtectedRoute allowedRoles={['administrador', 'operador']} />}>
             <Route path="/clientes" element={<Clientes />} />
             <Route path="/equipamentos" element={<Equipamentos />} />
             <Route path="/equipamentos/:id" element={<EquipamentoDetalhe />} />
             <Route path="/suprimentos" element={<Suprimentos />} />
             <Route path="/grafica-rapida" element={<GraficaRapida />} />
-            <Route path="/relatorios" element={<Relatorios />} />
             <Route path="/servicos" element={<Servicos />} />
-            <Route path="/usuarios" element={<Usuarios />} />
-            <Route path="/personalizar" element={<Personalizar />} />
           </Route>
 
-          {/* Cliente e Administrador podem acessar detalhes/contrato do cliente */}
-          <Route element={<ProtectedRoute allowedRoles={['administrador', 'cliente']} />}>
+          {/* Configurações e Relatórios restritos ao Administrador */}
+          <Route element={<ProtectedRoute allowedRoles={['administrador']} />}>
+            <Route path="/usuarios" element={<Usuarios />} />
+            <Route path="/personalizar" element={<Personalizar />} />
+            <Route path="/relatorios" element={<Relatorios />} />
+          </Route>
+
+          {/* Cliente, Operador e Administrador podem acessar detalhes/contrato do cliente */}
+          <Route
+            element={<ProtectedRoute allowedRoles={['administrador', 'cliente', 'operador']} />}
+          >
             <Route path="/clientes/:id" element={<ClienteDetalhe />} />
           </Route>
 
-          {/* Ordens de Serviço: Administrador, Técnico e Cliente */}
+          {/* Ordens de Serviço: Administrador, Técnico, Cliente e Operador */}
           <Route
-            element={<ProtectedRoute allowedRoles={['administrador', 'tecnico', 'cliente']} />}
+            element={
+              <ProtectedRoute allowedRoles={['administrador', 'tecnico', 'cliente', 'operador']} />
+            }
           >
             <Route path="/ordens-de-servico" element={<OrdensServico />} />
             <Route path="/ordens-de-servico/:id" element={<OrdemServicoDetalhe />} />

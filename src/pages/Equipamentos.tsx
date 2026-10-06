@@ -42,9 +42,13 @@ import {
 } from '@/components/ui/select'
 import type { Equipamento, Cliente } from '@/types'
 
+import { useAuth } from '@/context/AuthContext'
+
 export default function Equipamentos() {
   const navigate = useNavigate()
   const { toast } = useToast()
+  const { user } = useAuth()
+  const isOperador = user?.role === 'operador'
 
   const [equipamentos, setEquipamentos] = useState<Equipamento[]>([])
   const [clientes, setClientes] = useState<Cliente[]>([])
@@ -513,15 +517,17 @@ export default function Equipamentos() {
                     >
                       <Edit className="w-4 h-4" />
                     </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={(e) => handleOpenDelete(eq, e)}
-                      className="h-8 w-8 p-0 text-gray-500 hover:text-red-600"
-                      title="Excluir"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
+                    {!isOperador && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={(e) => handleOpenDelete(eq, e)}
+                        className="h-8 w-8 p-0 text-gray-500 hover:text-red-600"
+                        title="Excluir"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    )}
                   </div>
                 </div>
               </Card>
