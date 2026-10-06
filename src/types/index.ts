@@ -11,6 +11,7 @@ export interface Cliente {
   uf?: string
   endereco?: string
   status: 'ativo' | 'inativo'
+  contrato_digital?: string // Arquivo de contrato escaneado e assinado (PDF/imagem)
   created: string
   updated: string
 }
@@ -84,6 +85,8 @@ export interface OrdemServico {
   tecnico_responsavel?: string
   contador_atual?: number
   assinatura_desenho?: string
+  assinatura_nome?: string
+  assinatura_cpf?: string
   parecer_tecnico?: string
   status: 'aberta' | 'em_andamento' | 'aguardando_peca' | 'concluida'
   created: string
@@ -92,6 +95,22 @@ export interface OrdemServico {
     cliente_id?: Cliente
     equipamento_id?: Equipamento
     servico_id?: Servico
+  }
+}
+
+export interface OSPeca {
+  id: string
+  os_id: string
+  suprimento_id: string
+  descricao_item: string
+  quantidade: number
+  custo_unitario?: number
+  valor_cobrado?: number
+  created: string
+  updated: string
+  expand?: {
+    suprimento_id?: Suprimento
+    os_id?: OrdemServico
   }
 }
 
@@ -174,16 +193,126 @@ export type TipoSuprimento =
 
 export interface Suprimento {
   id: string
-  equipamento_id: string
+  equipamento_id?: string
   data: string
   tipo: TipoSuprimento
   item: string
   quantidade: number
   custo: number
+  valor_venda?: number
+  estoque_minimo?: number
   observacoes?: string
   created: string
   updated: string
   expand?: {
     equipamento_id?: Equipamento
+  }
+}
+
+// ----------------------------------------------------
+// NOVO MÓDULO: GESTÃO DA GRÁFICA RÁPIDA
+// ----------------------------------------------------
+
+export type CategoriaProdutoGrafica =
+  | 'papel_sulfite'
+  | 'papel_couche'
+  | 'adesivo'
+  | 'impressao'
+  | 'copia'
+  | 'scanner'
+  | 'plastificacao'
+  | 'encadernacao'
+  | 'outro'
+
+export interface GraficaProduto {
+  id: string
+  nome: string
+  categoria: CategoriaProdutoGrafica
+  formato_tamanho?: string // A4, A3, Carta, etc.
+  gramatura?: string // 75g, 90g, 115g, 150g, 250g, etc.
+  tipo_cor?: 'mono' | 'color' | 'ambos' | 'nao_se_aplica'
+  suprimento_insumo_id?: string
+  consumo_insumo_por_unidade?: number
+  custo_unitario: number
+  preco_venda: number
+  estoque_atual?: number
+  estoque_minimo?: number
+  unidade_medida?: 'folha' | 'resma' | 'metro' | 'unidade' | 'cento' | 'milheiro'
+  ativo?: boolean
+  created: string
+  updated: string
+  expand?: {
+    suprimento_insumo_id?: Suprimento
+  }
+}
+
+export interface GraficaCaixa {
+  id: string
+  data: string
+  operador: string
+  status: 'aberto' | 'fechado'
+  data_abertura: string
+  data_fechamento?: string
+  saldo_inicial?: number
+  total_entradas?: number
+  total_custo_insumos?: number
+  lucro_total?: number
+  saldo_final_dinheiro?: number
+  observacoes_abertura?: string
+  observacoes_fechamento?: string
+  created: string
+  updated: string
+}
+
+export interface GraficaCaixaContador {
+  id: string
+  caixa_id: string
+  equipamento_id: string
+  abertura_mono?: number
+  abertura_color?: number
+  abertura_copias?: number
+  abertura_scanner?: number
+  abertura_total?: number
+  fechamento_mono?: number
+  fechamento_color?: number
+  fechamento_copias?: number
+  fechamento_scanner?: number
+  fechamento_total?: number
+  delta_mono?: number
+  delta_color?: number
+  delta_copias?: number
+  delta_scanner?: number
+  delta_total?: number
+  observacoes?: string
+  created: string
+  updated: string
+  expand?: {
+    equipamento_id?: Equipamento
+    caixa_id?: GraficaCaixa
+  }
+}
+
+export interface GraficaVenda {
+  id: string
+  caixa_id: string
+  data_hora: string
+  produto_id?: string
+  descricao: string
+  quantidade: number
+  preco_unitario: number
+  valor_total: number
+  custo_total?: number
+  lucro_total?: number
+  forma_pagamento?: 'dinheiro' | 'pix' | 'cartao_debito' | 'cartao_credito' | 'a_prazo' | 'outro'
+  suprimento_baixado_id?: string
+  quantidade_insumo_baixada?: number
+  cliente_nome?: string
+  observacoes?: string
+  created: string
+  updated: string
+  expand?: {
+    produto_id?: GraficaProduto
+    suprimento_baixado_id?: Suprimento
+    caixa_id?: GraficaCaixa
   }
 }

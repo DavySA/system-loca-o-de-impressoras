@@ -285,8 +285,13 @@ export function OrdemServicoRelatorio({
               ) : null}
             </div>
             <p className="text-[11px] font-bold text-gray-900 mt-1.5 uppercase">
-              {cliente?.nome_razao_social || 'Cliente / Responsável'}
+              {ordem.assinatura_nome || cliente?.nome_razao_social || 'Cliente / Responsável'}
             </p>
+            {ordem.assinatura_cpf && (
+              <p className="text-[10px] font-mono text-gray-700">
+                CPF: {formatCnpjCpf(ordem.assinatura_cpf)}
+              </p>
+            )}
             <p className="text-[10px] text-gray-500">
               Assinatura do Recebedor / Conferência do Serviço
             </p>

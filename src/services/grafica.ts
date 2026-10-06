@@ -1,0 +1,406 @@
+import pb from '@/lib/pocketbase/client'
+import type { GraficaProduto, GraficaCaixa, GraficaCaixaContador, GraficaVenda } from '@/types'
+
+export const graficaService = {
+  // --------------------------------------------------------------------------
+  // 1. Produtos / Insumos de Papel / Adesivos / Serviços
+  // --------------------------------------------------------------------------
+  async getProdutos(filter?: string): Promise<GraficaProduto[]> {
+    return pb.collection('grafica_produtos').getFullList<GraficaProduto>({
+      filter: filter || '',
+      sort: 'categoria,nome',
+      expand: 'suprimento_insumo_id',
+    })
+  },
+
+  async getProdutoById(id: string): Promise<GraficaProduto> {
+    return pb.collection('grafica_produtos').getOne<GraficaProduto>(id, {
+      expand: 'suprimento_insumo_id',
+    })
+  },
+
+  async createProduto(data: Partial<GraficaProduto>): Promise<GraficaProduto> {
+    return pb.collection('grafica_produtos').create<GraficaProduto>(data)
+  },
+
+  async updateProduto(id: string, data: Partial<GraficaProduto>): Promise<GraficaProduto> {
+    return pb.collection('grafica_produtos').update<GraficaProduto>(id, data)
+  },
+
+  async deleteProduto(id: string): Promise<boolean> {
+    return pb.collection('grafica_produtos').delete(id)
+  },
+
+  // --------------------------------------------------------------------------
+  // 2. Caixas Diários (Abertura e Fechamento)
+  // --------------------------------------------------------------------------
+  async getCaixas(filter?: string): Promise<GraficaCaixa[]> {
+    return pb.collection('grafica_caixas').getFullList<GraficaCaixa>({
+      filter: filter || '',
+      sort: '-data,-created',
+    })
+  },
+
+  async getCaixaAberto(): Promise<GraficaCaixa | null> {
+    try {
+      const records = await pb.collection('grafica_caixas').getList<GraficaCaixa>(1, 1, {
+        filter: 'status = "aberto"',
+        sort: '-data_abertura',
+      })
+      return records.items[0] || null
+    } catch {
+      return null
+    }
+  },
+
+  async getCaixaById(id: string): Promise<GraficaCaixa> {
+    return pb.collection('grafica_caixas').getOne<GraficaCaixa>(id)
+  },
+
+  async abrirCaixa(data: {
+    operador: string
+    saldo_inicial: number
+    observacoes_abertura?: string
+    contadoresIniciais?: {
+      equipamento_id: string
+      abertura_mono: number
+      abertura_color: number
+      abertura_copias: number
+      abertura_scanner: number
+      abertura_total: number
+    }[]
+  }): Promise<GraficaCaixa> {
+    const hojeStr = new Date().toISOString()
+    const novoCaixa = await pb.collection('grafica_caixas').create<GraficaCaixa>({
+      data: hojeStr,
+      operador: data.operador,
+      status: 'aberto',
+      data_abertura: hojeStr,
+      saldo_inicial: Number(data.saldo_inicial) || 0,
+      total_entradas: 0,
+      total_custo_insumos: 0,
+      lucro_total: 0,
+      observacoes_abertura: data.observacoes_abertura || '',
+    })
+
+    // Gravar contadores iniciais de cada impressora da gráfica
+    if (data.contadoresIniciais && data.contadoresIniciais.length > 0) {
+      for (const cnt of data.contadoresIniciais) {
+        await pb.collection('grafica_caixa_contadores').create({
+          caixa_id: novoCaixa.id,
+          equipamento_id: cnt.equipamento_id,
+          abertura_mono: Number(cnt.abertura_mono) || 0,
+          abertura_color: Number(cnt.abertura_color) || 0,
+          abertura_copias: Number(cnt.abertura_copias) || 0,
+          abertura_scanner: Number(cnt.abertura_scanner) || 0,
+          abertura_total: Number(cnt.abertura_total) || 0,
+        })
+      }
+    }
+
+    return novoCaixa
+  },
+
+  async fecharCaixa(
+    caixaId: string,
+    data: {
+      observacoes_fechamento?: string
+      saldo_final_dinheiro?: number
+      contadoresFinais?: {
+        contador_id?: string
+        equipamento_id: string
+        fechamento_mono: number
+        fechamento_color: number
+        fechamento_copias: number
+        fechamento_scanner: number
+        fechamento_total: number
+      }[]
+    },
+  ): Promise<GraficaCaixa> {
+    // 1. Calcular vendas do caixa para somatórios precisos
+    const vendas = await this.getVendas(caixaId)
+    const totalEntradas = vendas.reduce((acc, v) => acc + (v.valor_total || 0), 0)
+    const totalCustos = vendas.reduce((acc, v) => acc + (v.custo_total || 0), 0)
+    const lucroTotal = totalEntradas - totalCustos
+
+    const caixaAtual = await pb.collection('grafica_caixas').getOne<GraficaCaixa>(caixaId)
+    const saldoFinal =
+      data.saldo_final_dinheiro !== undefined
+        ? data.saldo_final_dinheiro
+        : (caixaAtual.saldo_inicial || 0) + totalEntradas
+
+    // Atualizar contadores finais e calcular deltas
+    if (data.contadoresFinais) {
+      for (const finalCnt of data.contadoresFinais) {
+        let contadorRecord: GraficaCaixaContador | null = null
+        if (finalCnt.contador_id) {
+          contadorRecord = await pb
+            .collection('grafica_caixa_contadores')
+            .getOne<GraficaCaixaContador>(finalCnt.contador_id)
+        } else {
+          const list = await pb
+            .collection('grafica_caixa_contadores')
+            .getList<GraficaCaixaContador>(1, 1, {
+              filter: `caixa_id = "${caixaId}" && equipamento_id = "${finalCnt.equipamento_id}"`,
+            })
+          contadorRecord = list.items[0] || null
+        }
+
+        const abMono = contadorRecord?.abertura_mono || 0
+        const abColor = contadorRecord?.abertura_color || 0
+        const abCopias = contadorRecord?.abertura_copias || 0
+        const abScan = contadorRecord?.abertura_scanner || 0
+        const abTotal = contadorRecord?.abertura_total || 0
+
+        const fMono = Number(finalCnt.fechamento_mono) || abMono
+        const fColor = Number(finalCnt.fechamento_color) || abColor
+        const fCopias = Number(finalCnt.fechamento_copias) || abCopias
+        const fScan = Number(finalCnt.fechamento_scanner) || abScan
+        const fTotal = Number(finalCnt.fechamento_total) || fMono + fColor
+
+        const deltaMono = Math.max(0, fMono - abMono)
+        const deltaColor = Math.max(0, fColor - abColor)
+        const deltaCopias = Math.max(0, fCopias - abCopias)
+        const deltaScan = Math.max(0, fScan - abScan)
+        const deltaTotal = Math.max(0, fTotal - abTotal)
+
+        if (contadorRecord) {
+          await pb.collection('grafica_caixa_contadores').update(contadorRecord.id, {
+            fechamento_mono: fMono,
+            fechamento_color: fColor,
+            fechamento_copias: fCopias,
+            fechamento_scanner: fScan,
+            fechamento_total: fTotal,
+            delta_mono: deltaMono,
+            delta_color: deltaColor,
+            delta_copias: deltaCopias,
+            delta_scanner: deltaScan,
+            delta_total: deltaTotal,
+          })
+        } else {
+          await pb.collection('grafica_caixa_contadores').create({
+            caixa_id: caixaId,
+            equipamento_id: finalCnt.equipamento_id,
+            fechamento_mono: fMono,
+            fechamento_color: fColor,
+            fechamento_copias: fCopias,
+            fechamento_scanner: fScan,
+            fechamento_total: fTotal,
+            delta_mono: deltaMono,
+            delta_color: deltaColor,
+            delta_copias: deltaCopias,
+            delta_scanner: deltaScan,
+            delta_total: deltaTotal,
+          })
+        }
+      }
+    }
+
+    const agora = new Date().toISOString()
+    return pb.collection('grafica_caixas').update<GraficaCaixa>(caixaId, {
+      status: 'fechado',
+      data_fechamento: agora,
+      total_entradas: totalEntradas,
+      total_custo_insumos: totalCustos,
+      lucro_total: lucroTotal,
+      saldo_final_dinheiro: saldoFinal,
+      observacoes_fechamento: data.observacoes_fechamento || '',
+    })
+  },
+
+  async getContadoresPorCaixa(caixaId: string): Promise<GraficaCaixaContador[]> {
+    return pb.collection('grafica_caixa_contadores').getFullList<GraficaCaixaContador>({
+      filter: `caixa_id = "${caixaId}"`,
+      expand: 'equipamento_id',
+    })
+  },
+
+  // --------------------------------------------------------------------------
+  // 3. Vendas / Serviços do Caixa com Baixa Automática de Estoque
+  // --------------------------------------------------------------------------
+  async getVendas(caixaId?: string): Promise<GraficaVenda[]> {
+    const filter = caixaId ? `caixa_id = "${caixaId}"` : ''
+    return pb.collection('grafica_vendas').getFullList<GraficaVenda>({
+      filter,
+      sort: '-data_hora,-created',
+      expand: 'produto_id,suprimento_baixado_id',
+    })
+  },
+
+  async registrarVenda(data: {
+    caixa_id: string
+    produto_id?: string
+    descricao: string
+    quantidade: number
+    preco_unitario: number
+    custo_unitario?: number
+    forma_pagamento?: GraficaVenda['forma_pagamento']
+    cliente_nome?: string
+    observacoes?: string
+    darBaixaInsumo?: boolean
+  }): Promise<GraficaVenda> {
+    const quantidade = Number(data.quantidade) || 1
+    const precoUnitario = Number(data.preco_unitario) || 0
+    const valorTotal = quantidade * precoUnitario
+    let custoTotal = (Number(data.custo_unitario) || 0) * quantidade
+
+    let suprimentoBaixadoId: string | undefined = undefined
+    let qtdInsumoBaixada = 0
+
+    // Se vinculado a um produto da gráfica, buscar detalhes e efetuar baixa automática no estoque
+    if (data.produto_id) {
+      try {
+        const prod = await pb.collection('grafica_produtos').getOne<GraficaProduto>(data.produto_id)
+        if (!data.custo_unitario && prod.custo_unitario) {
+          custoTotal = prod.custo_unitario * quantidade
+        }
+
+        // Baixa no estoque do próprio produto da gráfica
+        if (prod.estoque_atual !== undefined) {
+          const novoEstoqueProd = Math.max(0, (prod.estoque_atual || 0) - quantidade)
+          await pb.collection('grafica_produtos').update(prod.id, {
+            estoque_atual: novoEstoqueProd,
+          })
+        }
+
+        // Se o produto consome um insumo vinculado em Suprimentos (ex: papel sulfite A4 comum)
+        if (prod.suprimento_insumo_id && data.darBaixaInsumo !== false) {
+          suprimentoBaixadoId = prod.suprimento_insumo_id
+          const fator = prod.consumo_insumo_por_unidade || 1
+          qtdInsumoBaixada = quantidade * fator
+          try {
+            const sup = await pb.collection('suprimentos').getOne(suprimentoBaixadoId)
+            const novoEstoqueSup = Math.max(0, (sup.quantidade || 0) - qtdInsumoBaixada)
+            await pb.collection('suprimentos').update(suprimentoBaixadoId, {
+              quantidade: novoEstoqueSup,
+            })
+          } catch (errSup) {
+            console.error('Erro ao baixar suprimento vinculado:', errSup)
+          }
+        }
+      } catch (err) {
+        console.error('Erro ao processar produto da venda:', err)
+      }
+    }
+
+    const lucroTotal = valorTotal - custoTotal
+
+    const novaVenda = await pb.collection('grafica_vendas').create<GraficaVenda>({
+      caixa_id: data.caixa_id,
+      data_hora: new Date().toISOString(),
+      produto_id: data.produto_id || undefined,
+      descricao: data.descricao,
+      quantidade,
+      preco_unitario: precoUnitario,
+      valor_total: valorTotal,
+      custo_total: custoTotal,
+      lucro_total: lucroTotal,
+      forma_pagamento: data.forma_pagamento || 'dinheiro',
+      suprimento_baixado_id: suprimentoBaixadoId,
+      quantidade_insumo_baixada: qtdInsumoBaixada,
+      cliente_nome: data.cliente_nome,
+      observacoes: data.observacoes,
+    })
+
+    // Atualizar acumulados do caixa atual
+    try {
+      const caixa = await pb.collection('grafica_caixas').getOne<GraficaCaixa>(data.caixa_id)
+      const novoTotal = (caixa.total_entradas || 0) + valorTotal
+      const novoCusto = (caixa.total_custo_insumos || 0) + custoTotal
+      const novoLucro = novoTotal - novoCusto
+      await pb.collection('grafica_caixas').update(data.caixa_id, {
+        total_entradas: novoTotal,
+        total_custo_insumos: novoCusto,
+        lucro_total: novoLucro,
+      })
+    } catch {
+      /* intentionally ignored */
+    }
+
+    return novaVenda
+  },
+
+  async estornarVenda(vendaId: string): Promise<boolean> {
+    try {
+      const venda = await pb.collection('grafica_vendas').getOne<GraficaVenda>(vendaId)
+
+      // Devolver estoque do produto
+      if (venda.produto_id) {
+        try {
+          const prod = await pb
+            .collection('grafica_produtos')
+            .getOne<GraficaProduto>(venda.produto_id)
+          const estoqueRestaurado = (prod.estoque_atual || 0) + Number(venda.quantidade || 0)
+          await pb.collection('grafica_produtos').update(venda.produto_id, {
+            estoque_atual: estoqueRestaurado,
+          })
+        } catch {
+          /* intentionally ignored */
+        }
+      }
+
+      // Devolver estoque do suprimento vinculado
+      if (venda.suprimento_baixado_id && venda.quantidade_insumo_baixada) {
+        try {
+          const sup = await pb.collection('suprimentos').getOne(venda.suprimento_baixado_id)
+          const estoqueRestaurado = (sup.quantidade || 0) + Number(venda.quantidade_insumo_baixada)
+          await pb.collection('suprimentos').update(venda.suprimento_baixado_id, {
+            quantidade: estoqueRestaurado,
+          })
+        } catch {
+          /* intentionally ignored */
+        }
+      }
+
+      // Reajustar caixa
+      if (venda.caixa_id) {
+        try {
+          const caixa = await pb.collection('grafica_caixas').getOne<GraficaCaixa>(venda.caixa_id)
+          const novoTotal = Math.max(0, (caixa.total_entradas || 0) - (venda.valor_total || 0))
+          const novoCusto = Math.max(0, (caixa.total_custo_insumos || 0) - (venda.custo_total || 0))
+          await pb.collection('grafica_caixas').update(venda.caixa_id, {
+            total_entradas: novoTotal,
+            total_custo_insumos: novoCusto,
+            lucro_total: novoTotal - novoCusto,
+          })
+        } catch {
+          /* intentionally ignored */
+        }
+      }
+
+      return await pb.collection('grafica_vendas').delete(vendaId)
+    } catch (e) {
+      console.error('Erro ao estornar venda:', e)
+      throw e
+    }
+  },
+
+  // --------------------------------------------------------------------------
+  // 4. Relatórios e Estatísticas de Insumos Vendidos e Lucro
+  // --------------------------------------------------------------------------
+  async getEstatisticasGerais(): Promise<{
+    totalVendasValor: number
+    totalCustos: number
+    lucroTotal: number
+    quantidadeItensVendidos: number
+    vendasRecentes: GraficaVenda[]
+  }> {
+    const todasVendas = await pb.collection('grafica_vendas').getFullList<GraficaVenda>({
+      sort: '-data_hora,-created',
+      expand: 'produto_id',
+    })
+
+    const totalVendasValor = todasVendas.reduce((acc, v) => acc + (v.valor_total || 0), 0)
+    const totalCustos = todasVendas.reduce((acc, v) => acc + (v.custo_total || 0), 0)
+    const lucroTotal = totalVendasValor - totalCustos
+    const quantidadeItensVendidos = todasVendas.reduce((acc, v) => acc + (v.quantidade || 1), 0)
+
+    return {
+      totalVendasValor,
+      totalCustos,
+      lucroTotal,
+      quantidadeItensVendidos,
+      vendasRecentes: todasVendas.slice(0, 50),
+    }
+  },
+}

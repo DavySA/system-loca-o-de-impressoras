@@ -11,6 +11,8 @@ import {
   ArrowRight,
   Clock,
   Calendar,
+  Package,
+  Boxes,
 } from 'lucide-react'
 import { useAuth } from '@/context/AuthContext'
 import { clientesService } from '@/services/clientes'
@@ -18,6 +20,8 @@ import { equipamentosService } from '@/services/equipamentos'
 import { ordensServicoService } from '@/services/ordensServico'
 import { faturasService } from '@/services/faturas'
 import { contratosService } from '@/services/contratos'
+import { suprimentosService } from '@/services/suprimentos'
+import { graficaService } from '@/services/grafica'
 import { formatCurrency, formatCompactCurrency, formatDate, formatOSCode } from '@/lib/formatters'
 import { useRealtime } from '@/hooks/use-realtime'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -35,6 +39,18 @@ export default function Dashboard() {
   const [openOsCount, setOpenOsCount] = useState(0)
   const [currentMonthRevenue, setCurrentMonthRevenue] = useState(0)
   const [recentOrders, setRecentOrders] = useState<OrdemServico[]>([])
+  const [graficaStats, setGraficaStats] = useState<{
+    totalVendasValor: number
+    totalCustos: number
+    lucroTotal: number
+    quantidadeItensVendidos: number
+  }>({
+    totalVendasValor: 0,
+    totalCustos: 0,
+    lucroTotal: 0,
+    quantidadeItensVendidos: 0,
+  })
+  const [suprimentosAbaixoMinimo, setSuprimentosAbaixoMinimo] = useState<number>(0)
   const [expiringContracts, setExpiringContracts] = useState<
     { contrato: Contrato; motivo: string }[]
   >([])
@@ -64,13 +80,27 @@ export default function Dashboard() {
   const loadDashboardData = async () => {
     try {
       setIsLoading(true)
-      const [clientes, equipamentos, ordens, faturas, contratos] = await Promise.all([
+      const [clientes, equipamentos, ordens, faturas, contratos, gStats, sups] = await Promise.all([
         clientesService.getAll(),
         equipamentosService.getAll(),
         ordensServicoService.getAll(),
         faturasService.getAll(),
         contratosService.getAll(),
+        graficaService.getEstatisticasGerais().catch(() => ({
+          totalVendasValor: 0,
+          totalCustos: 0,
+          lucroTotal: 0,
+          quantidadeItensVendidos: 0,
+          vendasRecentes: [],
+        })),
+        suprimentosService.getAll().catch(() => []),
       ])
+
+      setGraficaStats(gStats)
+      const abaixoMin = sups.filter(
+        (s) => s.estoque_minimo !== undefined && s.quantidade <= s.estoque_minimo,
+      ).length
+      setSuprimentosAbaixoMinimo(abaixoMin)
 
       // 1. Clientes ativos
       const activeClients = clientes.filter((c) => c.status === 'ativo').length
@@ -256,6 +286,9 @@ export default function Dashboard() {
   useRealtime('ordens_servico', () => loadDashboardData())
   useRealtime('faturas', () => loadDashboardData())
   useRealtime('contratos', () => loadDashboardData())
+  useRealtime('grafica_vendas', () => loadDashboardData())
+  useRealtime('grafica_caixas', () => loadDashboardData())
+  useRealtime('suprimentos', () => loadDashboardData())
 
   // Max valor do gráfico para escala
   const maxRevenue = Math.max(...monthlyRevenueData.map((d) => d.value), 2000)
@@ -289,6 +322,68 @@ export default function Dashboard() {
           >
             Faturamento
           </Button>
+        </div>
+      </div>
+
+      {/* Banner de Controle de Insumos Vendidos & Lucro (Gráfica e Suprimentos) */}
+      <div className="bg-gradient-to-r from-blue-900 via-indigo-900 to-slate-900 rounded-xl p-5 text-white shadow-sm border border-blue-800">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-blue-500/20 text-blue-200 border border-blue-400/30">
+                Módulo Gráfica Rápida & Insumos
+              </span>
+              {suprimentosAbaixoMinimo > 0 && (
+                <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-amber-500/20 text-amber-300 border border-amber-400/30 flex items-center gap-1">
+                  <AlertTriangle className="w-3 h-3 text-amber-400" /> {suprimentosAbaixoMinimo}{' '}
+                  insumo(s) em nível crítico
+                </span>
+              )}
+            </div>
+            <h2 className="text-lg font-bold text-white tracking-tight">
+              Desempenho Comercial de Insumos & Serviços
+            </h2>
+            <p className="text-xs text-blue-200">
+              Vendas no balcão da gráfica, cópias, adesivos, papéis e margem de lucro apurada (custo
+              x venda)
+            </p>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 border-t md:border-t-0 md:border-l border-white/10 pt-3 md:pt-0 md:pl-6">
+            <div>
+              <p className="text-[11px] font-medium text-blue-300 uppercase tracking-wider">
+                Insumos Vendidos
+              </p>
+              <p className="text-2xl font-bold text-white font-mono mt-0.5">
+                {graficaStats.quantidadeItensVendidos.toLocaleString('pt-BR')} un.
+              </p>
+              <span className="text-[10px] text-blue-300">Papéis e serviços</span>
+            </div>
+
+            <div>
+              <p className="text-[11px] font-medium text-blue-300 uppercase tracking-wider">
+                Faturado Insumos
+              </p>
+              <p className="text-2xl font-bold text-white font-mono mt-0.5">
+                {formatCurrency(graficaStats.totalVendasValor)}
+              </p>
+              <span className="text-[10px] text-blue-300">Total recebido</span>
+            </div>
+
+            <div className="col-span-2 sm:col-span-1">
+              <p className="text-[11px] font-medium text-emerald-300 uppercase tracking-wider">
+                Lucro Líquido
+              </p>
+              <p className="text-2xl font-bold text-emerald-400 font-mono mt-0.5">
+                {formatCurrency(graficaStats.lucroTotal)}
+              </p>
+              <span className="text-[10px] text-emerald-300">
+                {graficaStats.totalVendasValor > 0
+                  ? `Margem: ${((graficaStats.lucroTotal / graficaStats.totalVendasValor) * 100).toFixed(1)}%`
+                  : 'Margem estimada'}
+              </span>
+            </div>
+          </div>
         </div>
       </div>
 

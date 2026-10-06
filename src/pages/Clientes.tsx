@@ -13,6 +13,7 @@ import {
   Building,
   User as UserIcon,
 } from 'lucide-react'
+import pb from '@/lib/pocketbase/client'
 import { clientesService } from '@/services/clientes'
 import { formatCnpjCpf, formatPhone } from '@/lib/formatters'
 import { extractFieldErrors } from '@/lib/pocketbase/errors'
@@ -60,6 +61,7 @@ export default function Clientes() {
     endereco: '',
     status: 'ativo' as 'ativo' | 'inativo',
   })
+  const [contratoFile, setContratoFile] = useState<File | null>(null)
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
   const [isSubmitting, setIsSubmitting] = useState(false)
 
@@ -104,6 +106,7 @@ export default function Clientes() {
       endereco: '',
       status: 'ativo',
     })
+    setContratoFile(null)
     setFieldErrors({})
     setIsModalOpen(true)
   }
@@ -177,19 +180,34 @@ export default function Clientes() {
     setIsSubmitting(true)
     try {
       if (editingCliente) {
-        await clientesService.update(editingCliente.id, formData)
+        if (contratoFile) {
+          const data = new FormData()
+          Object.entries(formData).forEach(([k, v]) => data.append(k, v))
+          data.append('contrato_digital', contratoFile)
+          await clientesService.update(editingCliente.id, data)
+        } else {
+          await clientesService.update(editingCliente.id, formData)
+        }
         toast({
           title: 'Cliente atualizado',
           description: 'Dados cadastrais salvos com sucesso.',
         })
       } else {
-        await clientesService.create(formData)
+        if (contratoFile) {
+          const data = new FormData()
+          Object.entries(formData).forEach(([k, v]) => data.append(k, v))
+          data.append('contrato_digital', contratoFile)
+          await pb.collection('clientes').create(data)
+        } else {
+          await clientesService.create(formData)
+        }
         toast({
           title: 'Cliente cadastrado',
           description: 'Novo cliente registrado no sistema.',
         })
       }
       setIsModalOpen(false)
+      setContratoFile(null)
       loadClientes()
     } catch (err) {
       const extracted = extractFieldErrors(err)
@@ -495,6 +513,19 @@ export default function Clientes() {
                 value={formData.endereco}
                 onChange={(e) => setFormData({ ...formData, endereco: e.target.value })}
                 placeholder="Rua, número, complemento, bairro"
+              />
+            </div>
+
+            <div className="space-y-1.5 p-3 rounded-lg border border-gray-200 bg-gray-50">
+              <Label htmlFor="contrato" className="text-xs font-semibold text-gray-700 block">
+                Contrato Escaneado e Assinado (Opcional - PDF ou Imagem)
+              </Label>
+              <Input
+                id="contrato"
+                type="file"
+                accept=".pdf,image/png,image/jpeg,image/webp"
+                onChange={(e) => setContratoFile(e.target.files?.[0] || null)}
+                className="text-xs bg-white"
               />
             </div>
 

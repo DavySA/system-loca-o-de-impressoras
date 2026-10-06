@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-06T07:10:53.171Z",
+  "generatedAt": "2026-10-06T13:59:08.667Z",
   "collections": [
     {
       "name": "users",
@@ -138,6 +138,12 @@
           "required": false,
           "system": false,
           "autodateTriggers": ["onCreate", "onUpdate"]
+        },
+        {
+          "name": "contrato_digital",
+          "type": "file",
+          "required": false,
+          "system": false
         }
       ],
       "indexes": ["CREATE INDEX idx_clientes_status ON clientes (status)"]
@@ -508,6 +514,18 @@
           "type": "text",
           "required": false,
           "system": false
+        },
+        {
+          "name": "assinatura_nome",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "assinatura_cpf",
+          "type": "text",
+          "required": false,
+          "system": false
         }
       ],
       "indexes": [
@@ -823,7 +841,7 @@
         {
           "name": "equipamento_id",
           "type": "relation",
-          "required": true,
+          "required": false,
           "system": false,
           "collectionRef": "equipamentos"
         },
@@ -885,12 +903,580 @@
           "required": false,
           "system": false,
           "autodateTriggers": ["onCreate", "onUpdate"]
+        },
+        {
+          "name": "valor_venda",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "estoque_minimo",
+          "type": "number",
+          "required": false,
+          "system": false
         }
       ],
       "indexes": [
         "CREATE INDEX idx_suprimentos_equipamento ON suprimentos (equipamento_id)",
         "CREATE INDEX idx_suprimentos_tipo ON suprimentos (tipo)",
         "CREATE INDEX idx_suprimentos_data ON suprimentos (data DESC)"
+      ]
+    },
+    {
+      "name": "os_pecas",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "@request.auth.id != ''",
+        "update": "@request.auth.id != ''",
+        "delete": "@request.auth.id != ''"
+      },
+      "fields": [
+        {
+          "name": "os_id",
+          "type": "relation",
+          "required": true,
+          "system": false,
+          "collectionRef": "ordens_servico"
+        },
+        {
+          "name": "suprimento_id",
+          "type": "relation",
+          "required": true,
+          "system": false,
+          "collectionRef": "suprimentos"
+        },
+        {
+          "name": "descricao_item",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "quantidade",
+          "type": "number",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "custo_unitario",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "valor_cobrado",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": [
+        "CREATE INDEX idx_ospecas_os ON os_pecas (os_id)",
+        "CREATE INDEX idx_ospecas_sup ON os_pecas (suprimento_id)"
+      ]
+    },
+    {
+      "name": "grafica_produtos",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "@request.auth.id != ''",
+        "update": "@request.auth.id != ''",
+        "delete": "@request.auth.id != ''"
+      },
+      "fields": [
+        {
+          "name": "nome",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "categoria",
+          "type": "select",
+          "required": true,
+          "system": false,
+          "selectValues": [
+            "papel_sulfite",
+            "papel_couche",
+            "adesivo",
+            "impressao",
+            "copia",
+            "scanner",
+            "plastificacao",
+            "encadernacao",
+            "outro"
+          ]
+        },
+        {
+          "name": "formato_tamanho",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "gramatura",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "tipo_cor",
+          "type": "select",
+          "required": false,
+          "system": false,
+          "selectValues": ["mono", "color", "ambos", "nao_se_aplica"]
+        },
+        {
+          "name": "suprimento_insumo_id",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "suprimentos"
+        },
+        {
+          "name": "consumo_insumo_por_unidade",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "custo_unitario",
+          "type": "number",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "preco_venda",
+          "type": "number",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "estoque_atual",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "estoque_minimo",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "unidade_medida",
+          "type": "select",
+          "required": false,
+          "system": false,
+          "selectValues": ["folha", "resma", "metro", "unidade", "cento", "milheiro"]
+        },
+        {
+          "name": "ativo",
+          "type": "bool",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": [
+        "CREATE INDEX idx_grafica_prod_cat ON grafica_produtos (categoria)",
+        "CREATE INDEX idx_grafica_prod_nome ON grafica_produtos (nome)"
+      ]
+    },
+    {
+      "name": "grafica_caixas",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "@request.auth.id != ''",
+        "update": "@request.auth.id != ''",
+        "delete": "@request.auth.id != ''"
+      },
+      "fields": [
+        {
+          "name": "data",
+          "type": "date",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "operador",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "status",
+          "type": "select",
+          "required": true,
+          "system": false,
+          "selectValues": ["aberto", "fechado"]
+        },
+        {
+          "name": "data_abertura",
+          "type": "date",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "data_fechamento",
+          "type": "date",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "saldo_inicial",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "total_entradas",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "total_custo_insumos",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "lucro_total",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "saldo_final_dinheiro",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "observacoes_abertura",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "observacoes_fechamento",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": [
+        "CREATE INDEX idx_caixa_data ON grafica_caixas (data DESC)",
+        "CREATE INDEX idx_caixa_status ON grafica_caixas (status)"
+      ]
+    },
+    {
+      "name": "grafica_caixa_contadores",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "@request.auth.id != ''",
+        "update": "@request.auth.id != ''",
+        "delete": "@request.auth.id != ''"
+      },
+      "fields": [
+        {
+          "name": "caixa_id",
+          "type": "relation",
+          "required": true,
+          "system": false,
+          "collectionRef": "grafica_caixas"
+        },
+        {
+          "name": "equipamento_id",
+          "type": "relation",
+          "required": true,
+          "system": false,
+          "collectionRef": "equipamentos"
+        },
+        {
+          "name": "abertura_mono",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "abertura_color",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "abertura_copias",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "abertura_scanner",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "abertura_total",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "fechamento_mono",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "fechamento_color",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "fechamento_copias",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "fechamento_scanner",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "fechamento_total",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "delta_mono",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "delta_color",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "delta_copias",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "delta_scanner",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "delta_total",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "observacoes",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": [
+        "CREATE INDEX idx_cnt_caixa ON grafica_caixa_contadores (caixa_id)",
+        "CREATE INDEX idx_cnt_equip ON grafica_caixa_contadores (equipamento_id)"
+      ]
+    },
+    {
+      "name": "grafica_vendas",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "@request.auth.id != ''",
+        "update": "@request.auth.id != ''",
+        "delete": "@request.auth.id != ''"
+      },
+      "fields": [
+        {
+          "name": "caixa_id",
+          "type": "relation",
+          "required": true,
+          "system": false,
+          "collectionRef": "grafica_caixas"
+        },
+        {
+          "name": "data_hora",
+          "type": "date",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "produto_id",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "grafica_produtos"
+        },
+        {
+          "name": "descricao",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "quantidade",
+          "type": "number",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "preco_unitario",
+          "type": "number",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "valor_total",
+          "type": "number",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "custo_total",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "lucro_total",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "forma_pagamento",
+          "type": "select",
+          "required": false,
+          "system": false,
+          "selectValues": ["dinheiro", "pix", "cartao_debito", "cartao_credito", "a_prazo", "outro"]
+        },
+        {
+          "name": "suprimento_baixado_id",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "suprimentos"
+        },
+        {
+          "name": "quantidade_insumo_baixada",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "cliente_nome",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "observacoes",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": [
+        "CREATE INDEX idx_gvendas_caixa ON grafica_vendas (caixa_id)",
+        "CREATE INDEX idx_gvendas_data ON grafica_vendas (data_hora DESC)"
       ]
     }
   ]

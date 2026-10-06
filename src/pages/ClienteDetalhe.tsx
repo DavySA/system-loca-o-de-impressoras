@@ -15,7 +15,11 @@ import {
   Plus,
   AlertCircle,
   ExternalLink,
+  Upload,
+  FileCheck,
+  Download,
 } from 'lucide-react'
+import { useAuth } from '@/context/AuthContext'
 import { clientesService } from '@/services/clientes'
 import { contratosService } from '@/services/contratos'
 import { equipamentosService } from '@/services/equipamentos'
@@ -58,6 +62,7 @@ export default function ClienteDetalhe() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const { toast } = useToast()
+  const { user } = useAuth()
 
   const [cliente, setCliente] = useState<Cliente | null>(null)
   const [contratos, setContratos] = useState<Contrato[]>([])
@@ -97,6 +102,8 @@ export default function ClienteDetalhe() {
     endereco: '',
     status: 'ativo' as 'ativo' | 'inativo',
   })
+  const [contratoArquivo, setContratoArquivo] = useState<File | null>(null)
+  const [isUploadingContrato, setIsUploadingContrato] = useState(false)
 
   const loadData = async () => {
     if (!id) return
@@ -255,12 +262,22 @@ export default function ClienteDetalhe() {
     e.preventDefault()
     if (!id) return
     try {
-      await clientesService.update(id, formData)
+      if (contratoArquivo) {
+        const data = new FormData()
+        Object.entries(formData).forEach(([k, v]) => {
+          data.append(k, v)
+        })
+        data.append('contrato_digital', contratoArquivo)
+        await clientesService.update(id, data)
+      } else {
+        await clientesService.update(id, formData)
+      }
       toast({
         title: 'Cliente atualizado',
         description: 'Dados salvos com sucesso.',
       })
       setIsEditModalOpen(false)
+      setContratoArquivo(null)
       loadData()
     } catch (err) {
       toast({
@@ -268,6 +285,29 @@ export default function ClienteDetalhe() {
         title: 'Erro ao salvar',
         description: 'Não foi possível atualizar o cliente.',
       })
+    }
+  }
+
+  const handleUploadDirectContrato = async (file: File) => {
+    if (!id) return
+    try {
+      setIsUploadingContrato(true)
+      const data = new FormData()
+      data.append('contrato_digital', file)
+      await clientesService.update(id, data)
+      toast({
+        title: 'Contrato anexado com sucesso!',
+        description: 'O documento digitalizado já está disponível para consulta.',
+      })
+      loadData()
+    } catch (err) {
+      toast({
+        variant: 'destructive',
+        title: 'Erro no upload',
+        description: 'Não foi possível enviar o contrato assinado.',
+      })
+    } finally {
+      setIsUploadingContrato(false)
     }
   }
 
@@ -349,6 +389,13 @@ export default function ClienteDetalhe() {
           </TabsTrigger>
           <TabsTrigger value="faturamento" className="flex items-center gap-1.5 text-xs sm:text-sm">
             <Receipt className="w-4 h-4" /> Faturamento ({faturas.length})
+          </TabsTrigger>
+          <TabsTrigger
+            value="contrato_digital"
+            className="flex items-center gap-1.5 text-xs sm:text-sm"
+          >
+            <FileCheck className="w-4 h-4 text-blue-600" /> Contrato Assinado
+            {cliente.contrato_digital && <span className="w-2 h-2 rounded-full bg-emerald-500" />}
           </TabsTrigger>
           <TabsTrigger value="resumo" className="flex items-center gap-1.5 text-xs sm:text-sm">
             <FileText className="w-4 h-4" /> Resumo Cadastral
@@ -643,6 +690,138 @@ export default function ClienteDetalhe() {
                       ))}
                     </tbody>
                   </table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Tab Contrato Assinado / Escaneado */}
+        <TabsContent value="contrato_digital" className="space-y-4">
+          <Card className="border border-gray-200 shadow-xs">
+            <CardHeader className="pb-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+              <div>
+                <CardTitle className="text-base font-semibold text-gray-900 flex items-center gap-2">
+                  <FileCheck className="w-5 h-5 text-blue-600" /> Contrato Escaneado e Assinado
+                </CardTitle>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  Armazenamento digital do contrato físico assinado pelo cliente e pela locadora
+                </p>
+              </div>
+
+              {/* Botão de upload se admin */}
+              {user?.role !== 'cliente' && (
+                <div className="flex items-center gap-2">
+                  <label className="cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-blue-600 hover:bg-blue-700 text-white shadow-xs transition-colors">
+                    <Upload className="w-3.5 h-3.5" />
+                    {isUploadingContrato ? 'Enviando...' : 'Fazer Upload do Contrato'}
+                    <input
+                      type="file"
+                      accept=".pdf,image/png,image/jpeg,image/webp"
+                      className="hidden"
+                      disabled={isUploadingContrato}
+                      onChange={(e) => {
+                        const file = e.target.files?.[0]
+                        if (file) handleUploadDirectContrato(file)
+                      }}
+                    />
+                  </label>
+                </div>
+              )}
+            </CardHeader>
+
+            <CardContent>
+              {cliente.contrato_digital ? (
+                <div className="p-6 rounded-xl border border-blue-100 bg-blue-50/40 space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-12 h-12 rounded-lg bg-blue-600 text-white flex items-center justify-center shadow-xs shrink-0">
+                        <FileCheck className="w-6 h-6" />
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-bold text-gray-900">
+                          Contrato Digitalizado Disponível
+                        </h4>
+                        <p className="text-xs text-gray-500 mt-0.5">
+                          Arquivo:{' '}
+                          <span className="font-mono text-gray-700">
+                            {cliente.contrato_digital}
+                          </span>
+                        </p>
+                        <p className="text-[11px] text-emerald-700 font-semibold mt-0.5 flex items-center gap-1">
+                          ✓ Documento assinado arquivado no sistema
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <a
+                        href={clientesService.getContratoUrl(cliente) || '#'}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-lg bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 shadow-2xs"
+                      >
+                        <ExternalLink className="w-4 h-4 text-blue-600" /> Abrir em Nova Aba
+                      </a>
+                      <a
+                        href={clientesService.getContratoUrl(cliente) || '#'}
+                        download
+                        className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-lg bg-blue-600 hover:bg-blue-700 text-white shadow-2xs"
+                      >
+                        <Download className="w-4 h-4" /> Baixar Documento
+                      </a>
+                    </div>
+                  </div>
+
+                  {/* Preview se imagem ou iframe se PDF */}
+                  <div className="mt-4 pt-4 border-t border-blue-200/60">
+                    <p className="text-xs font-semibold text-gray-700 mb-2">Pré-visualização:</p>
+                    {cliente.contrato_digital.toLowerCase().endsWith('.pdf') ? (
+                      <div className="w-full h-96 rounded-lg border border-gray-300 overflow-hidden bg-white">
+                        <iframe
+                          src={clientesService.getContratoUrl(cliente) || ''}
+                          title="Visualização do Contrato"
+                          className="w-full h-full border-0"
+                        />
+                      </div>
+                    ) : (
+                      <div className="max-w-xl mx-auto rounded-lg border border-gray-300 p-2 bg-white flex justify-center">
+                        <img
+                          src={clientesService.getContratoUrl(cliente) || ''}
+                          alt="Contrato Assinado"
+                          className="max-h-96 object-contain rounded"
+                        />
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="text-center py-10 px-4 rounded-xl border border-dashed border-gray-300 bg-gray-50/60">
+                  <FileText className="w-10 h-10 text-gray-400 mx-auto mb-2" />
+                  <h4 className="text-sm font-semibold text-gray-800">
+                    Nenhum contrato escaneado anexado
+                  </h4>
+                  <p className="text-xs text-gray-500 max-w-md mx-auto mt-1">
+                    Envie o PDF ou foto do contrato físico assinado para que fique salvo no cadastro
+                    e possa ser consultado e baixado a qualquer momento.
+                  </p>
+                  {user?.role !== 'cliente' && (
+                    <div className="mt-4">
+                      <label className="cursor-pointer inline-flex items-center gap-1.5 px-4 py-2 text-xs font-medium rounded-lg bg-blue-600 hover:bg-blue-700 text-white shadow-xs">
+                        <Upload className="w-3.5 h-3.5" />
+                        Selecionar PDF / Foto do Contrato
+                        <input
+                          type="file"
+                          accept=".pdf,image/png,image/jpeg,image/webp"
+                          className="hidden"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0]
+                            if (file) handleUploadDirectContrato(file)
+                          }}
+                        />
+                      </label>
+                    </div>
+                  )}
                 </div>
               )}
             </CardContent>
@@ -1073,7 +1252,7 @@ export default function ClienteDetalhe() {
             </div>
 
             <div className="space-y-1.5">
-              <Label htmlFor="edit-endereco">Endereço</Label>
+              <Label htmlFor="edit-endereco">Endereço Completo</Label>
               <Input
                 id="edit-endereco"
                 value={formData.endereco}
@@ -1081,6 +1260,23 @@ export default function ClienteDetalhe() {
               />
             </div>
 
+            <div className="space-y-1.5 p-3 rounded-lg border border-gray-200 bg-gray-50">
+              <Label htmlFor="edit-contrato" className="text-xs font-semibold text-gray-700 block">
+                Substituir / Enviar Contrato Escaneado e Assinado (PDF ou Imagem)
+              </Label>
+              <Input
+                id="edit-contrato"
+                type="file"
+                accept=".pdf,image/png,image/jpeg,image/webp"
+                onChange={(e) => setContratoArquivo(e.target.files?.[0] || null)}
+                className="text-xs bg-white"
+              />
+              {cliente.contrato_digital && (
+                <p className="text-[11px] text-gray-500 mt-1">
+                  Arquivo atual: <span className="font-mono">{cliente.contrato_digital}</span>
+                </p>
+              )}
+            </div>
             <DialogFooter className="pt-4 gap-2">
               <Button type="button" variant="outline" onClick={() => setIsEditModalOpen(false)}>
                 Cancelar

@@ -14,6 +14,7 @@ import {
   BarChart3,
   Package,
   Settings,
+  Layers,
 } from 'lucide-react'
 import { useAuth } from '@/context/AuthContext'
 import { ordensServicoService } from '@/services/ordensServico'
@@ -196,9 +197,21 @@ export default function Layout({ children }: LayoutProps) {
       roles: ['administrador', 'cliente'],
     },
     {
+      label: 'Meu Contrato',
+      path: user?.cliente_id ? `/clientes/${user.cliente_id}` : '/clientes',
+      icon: Receipt,
+      roles: ['cliente'],
+    },
+    {
       label: 'Suprimentos',
       path: '/suprimentos',
       icon: Package,
+      roles: ['administrador'],
+    },
+    {
+      label: 'Gráfica Rápida',
+      path: '/grafica-rapida',
+      icon: Layers,
       roles: ['administrador'],
     },
     {

@@ -17,8 +17,13 @@ export const clientesService = {
     return pb.collection('clientes').create<Cliente>(data)
   },
 
-  async update(id: string, data: Partial<Cliente>): Promise<Cliente> {
+  async update(id: string, data: Partial<Cliente> | FormData): Promise<Cliente> {
     return pb.collection('clientes').update<Cliente>(id, data)
+  },
+
+  getContratoUrl(cliente: Cliente): string | null {
+    if (!cliente.contrato_digital) return null
+    return pb.files.getURL(cliente, cliente.contrato_digital)
   },
 
   async delete(id: string): Promise<boolean> {

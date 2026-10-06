@@ -13,10 +13,19 @@ import {
   MessageSquare,
   Send,
   ExternalLink,
+  PackagePlus,
+  Trash2,
 } from 'lucide-react'
 import { ordensServicoService } from '@/services/ordensServico'
+import { suprimentosService } from '@/services/suprimentos'
 import { configuracoesService } from '@/services/configuracoes'
-import { formatOSCode, formatDate, formatDateTime } from '@/lib/formatters'
+import {
+  formatOSCode,
+  formatDate,
+  formatDateTime,
+  formatCurrency,
+  formatCnpjCpf,
+} from '@/lib/formatters'
 import { useAuth } from '@/context/AuthContext'
 import { useToast } from '@/hooks/use-toast'
 import { useRealtime } from '@/hooks/use-realtime'
@@ -43,7 +52,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog'
 import { OrdemServicoPrintDialog } from '@/components/OrdemServicoPrintDialog'
-import type { OrdemServico, AtualizacaoOS, ConfiguracoesEmpresa } from '@/types'
+import type { OrdemServico, AtualizacaoOS, ConfiguracoesEmpresa, OSPeca, Suprimento } from '@/types'
 
 export default function OrdemServicoDetalhe() {
   const { id } = useParams<{ id: string }>()
@@ -54,6 +63,8 @@ export default function OrdemServicoDetalhe() {
   const [ordem, setOrdem] = useState<OrdemServico | null>(null)
   const [atualizacoes, setAtualizacoes] = useState<AtualizacaoOS[]>([])
   const [ultimosAtendimentos, setUltimosAtendimentos] = useState<OrdemServico[]>([])
+  const [pecasUtilizadas, setPecasUtilizadas] = useState<OSPeca[]>([])
+  const [estoqueSuprimentos, setEstoqueSuprimentos] = useState<Suprimento[]>([])
   const [configEmpresa, setConfigEmpresa] = useState<ConfiguracoesEmpresa | null>(null)
   const [isLoading, setIsLoading] = useState(true)
 
@@ -61,7 +72,16 @@ export default function OrdemServicoDetalhe() {
   const [contadorAtual, setContadorAtual] = useState<number>(0)
   const [parecerTecnico, setParecerTecnico] = useState<string>('')
   const [assinaturaDataUrl, setAssinaturaDataUrl] = useState<string>('')
+  const [assinaturaNome, setAssinaturaNome] = useState<string>('')
+  const [assinaturaCpf, setAssinaturaCpf] = useState<string>('')
   const [isSavingDadosTecnicos, setIsSavingDadosTecnicos] = useState(false)
+
+  // Modal / Formulário de Inserção de Peças com baixa automática
+  const [isModalPecaOpen, setIsModalPecaOpen] = useState(false)
+  const [pecaSelecionadaId, setPecaSelecionadaId] = useState<string>('')
+  const [pecaQuantidade, setPecaQuantidade] = useState<number>(1)
+  const [pecaValorCobrado, setPecaValorCobrado] = useState<number>(0)
+  const [isSavingPeca, setIsSavingPeca] = useState(false)
 
   // Formulário nova atualização
   const [novoComentario, setNovoComentario] = useState('')
@@ -81,14 +101,18 @@ export default function OrdemServicoDetalhe() {
     if (!id) return
     try {
       setIsLoading(true)
-      const [os, atList, cfg] = await Promise.all([
+      const [os, atList, cfg, pecas, suprimentos] = await Promise.all([
         ordensServicoService.getById(id),
         ordensServicoService.getAtualizacoes(id),
         configuracoesService.get(),
+        ordensServicoService.getPecas(id),
+        suprimentosService.getAll(),
       ])
       setOrdem(os)
       setAtualizacoes(atList)
       setConfigEmpresa(cfg)
+      setPecasUtilizadas(pecas)
+      setEstoqueSuprimentos(suprimentos)
       setNovoStatus(os.status)
       setContadorAtual(
         os.contador_atual ||
@@ -97,6 +121,8 @@ export default function OrdemServicoDetalhe() {
       )
       setParecerTecnico(os.parecer_tecnico || '')
       setAssinaturaDataUrl(os.assinatura_desenho || '')
+      setAssinaturaNome(os.assinatura_nome || os.expand?.cliente_id?.nome_razao_social || '')
+      setAssinaturaCpf(os.assinatura_cpf || '')
 
       if (os.equipamento_id) {
         try {
@@ -126,6 +152,8 @@ export default function OrdemServicoDetalhe() {
 
   useRealtime('ordens_servico', () => loadData())
   useRealtime('atualizacoes_os', () => loadData())
+  useRealtime('os_pecas', () => loadData())
+  useRealtime('suprimentos', () => loadData())
 
   const handleAddAtualizacao = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -164,10 +192,13 @@ export default function OrdemServicoDetalhe() {
         contador_atual: Number(contadorAtual),
         parecer_tecnico: parecerTecnico,
         assinatura_desenho: assinaturaDataUrl,
+        assinatura_nome: assinaturaNome,
+        assinatura_cpf: assinaturaCpf,
       })
       toast({
         title: 'Dados da O.S. salvos com sucesso',
-        description: 'Contador, parecer técnico e assinatura atualizados.',
+        description:
+          'Contador, parecer técnico e assinatura do cliente com Nome e CPF atualizados.',
       })
       loadData()
     } catch (err: any) {
@@ -188,11 +219,13 @@ export default function OrdemServicoDetalhe() {
   const handleConfirmarConclusao = async () => {
     if (!id) return
     try {
-      // Salvar também parecer_tecnico e contador se informados
+      // Salvar também parecer_tecnico, contador e assinatura se informados
       await ordensServicoService.update(id, {
         contador_atual: Number(contadorAtual),
         parecer_tecnico: parecerTecnico || concluirComentario,
         assinatura_desenho: assinaturaDataUrl,
+        assinatura_nome: assinaturaNome,
+        assinatura_cpf: assinaturaCpf,
       })
       await ordensServicoService.marcarConcluida(
         id,
@@ -210,6 +243,101 @@ export default function OrdemServicoDetalhe() {
         variant: 'destructive',
         title: 'Erro ao concluir O.S.',
         description: 'Tente novamente.',
+      })
+    }
+  }
+
+  // Gerenciamento de Peças e Baixa Automática
+  const handleAdicionarPeca = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!id || !pecaSelecionadaId) {
+      toast({
+        variant: 'destructive',
+        title: 'Selecione uma peça',
+        description: 'Escolha um item de suprimento do estoque.',
+      })
+      return
+    }
+
+    const sup = estoqueSuprimentos.find((s) => s.id === pecaSelecionadaId)
+    if (!sup) return
+
+    if ((sup.quantidade || 0) < pecaQuantidade) {
+      toast({
+        variant: 'destructive',
+        title: 'Estoque insuficiente',
+        description: `O estoque atual deste item é de apenas ${sup.quantidade} unidade(s).`,
+      })
+      return
+    }
+
+    setIsSavingPeca(true)
+    try {
+      await ordensServicoService.adicionarPeca({
+        os_id: id,
+        suprimento_id: pecaSelecionadaId,
+        descricao_item: sup.item,
+        quantidade: Number(pecaQuantidade),
+        custo_unitario: sup.custo || 0,
+        valor_cobrado: Number(pecaValorCobrado) || sup.valor_venda || sup.custo || 0,
+      })
+
+      // Adicionar atualização na timeline informando a baixa
+      await ordensServicoService.addAtualizacao(
+        id,
+        user?.name || 'Técnico',
+        `Peça aplicada: ${sup.item} (Qtd: ${pecaQuantidade}). Baixa automática realizada no estoque de Suprimentos.`,
+        ordem?.status || 'em_andamento',
+      )
+
+      toast({
+        title: 'Peça adicionada à O.S.!',
+        description: `Baixa de ${pecaQuantidade} unidade(s) efetuada no estoque de Suprimentos com sucesso.`,
+      })
+      setIsModalPecaOpen(false)
+      setPecaSelecionadaId('')
+      setPecaQuantidade(1)
+      setPecaValorCobrado(0)
+      loadData()
+    } catch (err: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Erro ao adicionar peça',
+        description: err.message || 'Tente novamente.',
+      })
+    } finally {
+      setIsSavingPeca(false)
+    }
+  }
+
+  const handleRemoverPeca = async (pecaId: string, descricao: string, qtd: number) => {
+    if (
+      !confirm(
+        `Deseja remover a peça "${descricao}" desta O.S.? A quantidade de ${qtd} unidade(s) será automaticamente devolvida ao estoque de Suprimentos.`,
+      )
+    )
+      return
+
+    try {
+      await ordensServicoService.removerPeca(pecaId)
+      if (id) {
+        await ordensServicoService.addAtualizacao(
+          id,
+          user?.name || 'Sistema',
+          `Peça removida da O.S.: ${descricao} (Qtd: ${qtd}). Quantidade devolvida ao estoque de Suprimentos.`,
+          ordem?.status || 'em_andamento',
+        )
+      }
+      toast({
+        title: 'Peça removida',
+        description: `Quantidade de ${qtd} unidade(s) restaurada no estoque de suprimentos.`,
+      })
+      loadData()
+    } catch (err) {
+      toast({
+        variant: 'destructive',
+        title: 'Erro ao remover peça',
+        description: 'Não foi possível remover e restaurar o estoque.',
       })
     }
   }
@@ -509,11 +637,134 @@ export default function OrdemServicoDetalhe() {
             </div>
           </div>
 
-          {/* Assinatura no display */}
-          <div className="pt-3 border-t border-gray-100">
-            <Label className="text-xs font-semibold text-gray-700 block mb-2">
-              Assinatura do Cliente / Recebedor do Serviço:
-            </Label>
+          {/* Peças e Suprimentos Utilizados nesta O.S. (com baixa automática) */}
+          <div className="pt-4 border-t border-gray-200">
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <h4 className="text-sm font-bold text-gray-900 flex items-center gap-1.5">
+                  <PackagePlus className="w-4 h-4 text-blue-600" /> Peças & Suprimentos Utilizados
+                </h4>
+                <p className="text-[11px] text-gray-500">
+                  Ao registrar peças utilizadas, é dada baixa automática imediata no estoque de
+                  Suprimentos.
+                </p>
+              </div>
+              {ordem.status !== 'concluida' && (
+                <Button
+                  size="sm"
+                  type="button"
+                  onClick={() => setIsModalPecaOpen(true)}
+                  className="bg-blue-600 hover:bg-blue-700 text-white text-xs h-8 flex items-center gap-1"
+                >
+                  <PackagePlus className="w-3.5 h-3.5" /> Adicionar Peça / Insumo
+                </Button>
+              )}
+            </div>
+
+            {pecasUtilizadas.length === 0 ? (
+              <div className="p-3 bg-gray-50 rounded-lg border border-dashed border-gray-200 text-center text-xs text-gray-500">
+                Nenhuma peça ou suprimento registrado nesta O.S. ainda.
+              </div>
+            ) : (
+              <div className="overflow-x-auto rounded-lg border border-gray-200">
+                <table className="w-full text-left text-xs bg-white">
+                  <thead className="bg-gray-50 text-gray-600 font-semibold border-b border-gray-200">
+                    <tr>
+                      <th className="py-2 px-3">Peça / Insumo</th>
+                      <th className="py-2 px-3 text-center">Quantidade</th>
+                      <th className="py-2 px-3 text-right">Custo Unitário</th>
+                      <th className="py-2 px-3 text-right">Valor Cobrado</th>
+                      <th className="py-2 px-3 text-right">Total</th>
+                      {ordem.status !== 'concluida' && (
+                        <th className="py-2 px-3 text-right">Ação</th>
+                      )}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {pecasUtilizadas.map((p) => {
+                      const totalPeca = (p.valor_cobrado || p.custo_unitario || 0) * p.quantidade
+                      return (
+                        <tr key={p.id} className="hover:bg-gray-50">
+                          <td className="py-2.5 px-3 font-semibold text-gray-900">
+                            {p.descricao_item}
+                          </td>
+                          <td className="py-2.5 px-3 text-center font-mono font-medium">
+                            {p.quantidade}
+                          </td>
+                          <td className="py-2.5 px-3 text-right font-mono text-gray-600">
+                            {formatCurrency(p.custo_unitario || 0)}
+                          </td>
+                          <td className="py-2.5 px-3 text-right font-mono text-gray-600">
+                            {formatCurrency(p.valor_cobrado || 0)}
+                          </td>
+                          <td className="py-2.5 px-3 text-right font-mono font-bold text-blue-900">
+                            {formatCurrency(totalPeca)}
+                          </td>
+                          {ordem.status !== 'concluida' && (
+                            <td className="py-2.5 px-3 text-right">
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                type="button"
+                                onClick={() =>
+                                  handleRemoverPeca(p.id, p.descricao_item, p.quantidade)
+                                }
+                                className="h-7 w-7 p-0 text-red-500 hover:text-red-700 hover:bg-red-50"
+                                title="Remover e devolver ao estoque"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </Button>
+                            </td>
+                          )}
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {/* Assinatura no display + Nome e CPF */}
+          <div className="pt-4 border-t border-gray-200 space-y-3">
+            <div>
+              <Label className="text-xs font-semibold text-gray-700 block mb-1">
+                Assinatura do Cliente / Recebedor do Chamado:
+              </Label>
+              <p className="text-[11px] text-gray-500 mb-2">
+                Preencha o Nome e CPF da pessoa que assinou a O.S. para que constem no comprovante e
+                na impressão permanente.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-xl">
+              <div className="space-y-1">
+                <Label htmlFor="as-nome" className="text-xs font-medium text-gray-700">
+                  Nome de quem assinou *
+                </Label>
+                <Input
+                  id="as-nome"
+                  value={assinaturaNome}
+                  onChange={(e) => setAssinaturaNome(e.target.value)}
+                  placeholder="Nome completo do recebedor"
+                  className="text-xs bg-white"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <Label htmlFor="as-cpf" className="text-xs font-medium text-gray-700">
+                  CPF de quem assinou *
+                </Label>
+                <Input
+                  id="as-cpf"
+                  value={assinaturaCpf}
+                  onChange={(e) => setAssinaturaCpf(formatCnpjCpf(e.target.value))}
+                  placeholder="000.000.000-00"
+                  className="text-xs bg-white font-mono"
+                />
+              </div>
+            </div>
+
             <div className="max-w-md">
               <SignaturePad
                 initialDataUrl={assinaturaDataUrl}
@@ -715,6 +966,102 @@ export default function OrdemServicoDetalhe() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Modal de Adicionar Peça / Insumo com Baixa de Estoque */}
+      <Dialog open={isModalPecaOpen} onOpenChange={setIsModalPecaOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-base font-semibold text-gray-900 flex items-center gap-2">
+              <PackagePlus className="w-5 h-5 text-blue-600" /> Adicionar Peça / Insumo à O.S.
+            </DialogTitle>
+          </DialogHeader>
+
+          <form onSubmit={handleAdicionarPeca} className="space-y-4 pt-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="peca-select" className="text-xs font-medium text-gray-700">
+                Item de Suprimento (Estoque Disponível) *
+              </Label>
+              <select
+                id="peca-select"
+                value={pecaSelecionadaId}
+                onChange={(e) => {
+                  const selId = e.target.value
+                  setPecaSelecionadaId(selId)
+                  const sup = estoqueSuprimentos.find((s) => s.id === selId)
+                  if (sup) {
+                    setPecaValorCobrado(sup.valor_venda || sup.custo || 0)
+                  }
+                }}
+                required
+                className="w-full text-xs rounded-md border border-gray-300 p-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-600"
+              >
+                <option value="">Selecione a peça ou insumo...</option>
+                {estoqueSuprimentos.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.item} (Estoque: {s.quantidade} un. | Custo: {formatCurrency(s.custo)})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="peca-qtd" className="text-xs font-medium text-gray-700">
+                  Quantidade a Usar *
+                </Label>
+                <Input
+                  id="peca-qtd"
+                  type="number"
+                  min="1"
+                  value={pecaQuantidade}
+                  onChange={(e) => setPecaQuantidade(Math.max(1, parseInt(e.target.value) || 1))}
+                  required
+                  className="text-xs font-mono"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="peca-valor" className="text-xs font-medium text-gray-700">
+                  Valor Cobrado Un. (R$)
+                </Label>
+                <Input
+                  id="peca-valor"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={pecaValorCobrado}
+                  onChange={(e) => setPecaValorCobrado(parseFloat(e.target.value) || 0)}
+                  className="text-xs font-mono"
+                />
+              </div>
+            </div>
+
+            <div className="p-3 bg-blue-50/60 rounded-lg border border-blue-200 text-[11.5px] text-blue-900 leading-relaxed">
+              ℹ️ <strong>Baixa Automática:</strong> Ao confirmar, o sistema reduzirá
+              instantaneamente <strong>{pecaQuantidade} unidade(s)</strong> do estoque de
+              Suprimentos.
+            </div>
+
+            <DialogFooter className="pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setIsModalPecaOpen(false)}
+                className="text-xs"
+              >
+                Cancelar
+              </Button>
+              <Button
+                type="submit"
+                disabled={isSavingPeca}
+                className="text-xs bg-blue-600 hover:bg-blue-700 text-white"
+              >
+                {isSavingPeca ? 'Gravando e Baixando...' : 'Confirmar e Dar Baixa'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       {/* Modal Marcar como Concluída */}
       <Dialog open={concluirModalOpen} onOpenChange={setConcluirModalOpen}>

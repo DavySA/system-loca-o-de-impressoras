@@ -1,5 +1,5 @@
 import pb from '@/lib/pocketbase/client'
-import type { OrdemServico, AtualizacaoOS } from '@/types'
+import type { OrdemServico, AtualizacaoOS, OSPeca } from '@/types'
 
 export const ordensServicoService = {
   async getAll(filter?: string): Promise<OrdemServico[]> {
@@ -106,5 +106,64 @@ export const ordensServicoService = {
 
   async delete(id: string): Promise<boolean> {
     return pb.collection('ordens_servico').delete(id)
+  },
+
+  // --------------------------------------------------------------------------
+  // Gestão de Peças e Baixa Automática de Estoque na O.S.
+  // --------------------------------------------------------------------------
+  async getPecas(osId: string): Promise<OSPeca[]> {
+    return pb.collection('os_pecas').getFullList<OSPeca>({
+      filter: `os_id = "${osId}"`,
+      sort: '-created',
+      expand: 'suprimento_id',
+    })
+  },
+
+  async adicionarPeca(data: {
+    os_id: string
+    suprimento_id: string
+    descricao_item: string
+    quantidade: number
+    custo_unitario?: number
+    valor_cobrado?: number
+  }): Promise<OSPeca> {
+    // 1. Criar registro da peça vinculada à O.S.
+    const peca = await pb.collection('os_pecas').create<OSPeca>(data)
+
+    // 2. Dar baixa automática na quantidade do suprimento
+    try {
+      const sup = await pb.collection('suprimentos').getOne(data.suprimento_id)
+      const novoEstoque = Math.max(0, (sup.quantidade || 0) - Number(data.quantidade))
+      await pb.collection('suprimentos').update(data.suprimento_id, {
+        quantidade: novoEstoque,
+      })
+    } catch (err) {
+      console.error('Erro ao dar baixa no estoque do suprimento:', err)
+    }
+
+    return peca
+  },
+
+  async removerPeca(pecaId: string): Promise<boolean> {
+    try {
+      const peca = await pb.collection('os_pecas').getOne<OSPeca>(pecaId)
+      // 1. Devolver quantidade ao estoque do suprimento correspondente
+      if (peca.suprimento_id && peca.quantidade > 0) {
+        try {
+          const sup = await pb.collection('suprimentos').getOne(peca.suprimento_id)
+          const estoqueRestaurado = (sup.quantidade || 0) + Number(peca.quantidade)
+          await pb.collection('suprimentos').update(peca.suprimento_id, {
+            quantidade: estoqueRestaurado,
+          })
+        } catch (e) {
+          console.error('Erro ao restaurar estoque do suprimento:', e)
+        }
+      }
+      // 2. Excluir registro da peça
+      return await pb.collection('os_pecas').delete(pecaId)
+    } catch (e) {
+      console.error('Erro ao remover peça da O.S.:', e)
+      throw e
+    }
   },
 }
