@@ -1,10 +1,11 @@
 import React, { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
-import { Printer, Eye, EyeOff, AlertCircle } from 'lucide-react'
+import { Eye, EyeOff, AlertCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import defaultLogo from '@/assets/logo-png-copia-13bb2.png'
 
 export default function Login() {
   const [email, setEmail] = useState('davycontato@hotmail.com')
@@ -36,13 +37,19 @@ export default function Login() {
     <div className="min-h-screen w-full flex items-center justify-center p-4 bg-gradient-to-br from-[#1F2937] via-[#1A222F] to-[#111827]">
       <div className="w-full max-w-md bg-white rounded-xl shadow-2xl overflow-hidden border border-gray-100 p-8 transition-all">
         {/* Logo & Brand */}
-        <div className="flex flex-col items-center mb-8">
-          <div className="w-14 h-14 bg-blue-600 text-white rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/20 mb-3">
-            <Printer className="w-8 h-8" />
+        <div className="flex flex-col items-center mb-8 text-center">
+          <div className="w-20 h-16 mb-2 flex items-center justify-center">
+            <img
+              src={defaultLogo}
+              alt="TD Technology System"
+              className="max-h-16 w-auto object-contain drop-shadow-sm"
+            />
           </div>
-          <h1 className="text-2xl font-bold text-gray-900 tracking-tight">PrintGest</h1>
-          <p className="text-xs text-gray-500 mt-1 uppercase tracking-widest font-semibold">
-            Gestão de Locação de Impressoras
+          <h1 className="text-xl font-bold text-gray-900 tracking-tight">
+            TD Technology System ERP
+          </h1>
+          <p className="text-xs text-gray-500 mt-1 uppercase tracking-wider font-semibold">
+            Gestão de Locação e Outsourcing
           </p>
         </div>
 

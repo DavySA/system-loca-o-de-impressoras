@@ -42,6 +42,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from '@/components/ui/dialog'
+import { OrdemServicoPrintDialog } from '@/components/OrdemServicoPrintDialog'
 import type { OrdemServico, AtualizacaoOS, ConfiguracoesEmpresa } from '@/types'
 
 export default function OrdemServicoDetalhe() {
@@ -72,6 +73,9 @@ export default function OrdemServicoDetalhe() {
   // Modal Confirmação Concluir
   const [concluirModalOpen, setConcluirModalOpen] = useState(false)
   const [concluirComentario, setConcluirComentario] = useState('Serviço finalizado com sucesso.')
+
+  // Modal Relatório de Impressão Dedicado
+  const [isPrintDialogOpen, setIsPrintDialogOpen] = useState(false)
 
   const loadData = async () => {
     if (!id) return
@@ -178,7 +182,7 @@ export default function OrdemServicoDetalhe() {
   }
 
   const handlePrint = () => {
-    window.print()
+    setIsPrintDialogOpen(true)
   }
 
   const handleConfirmarConclusao = async () => {
@@ -603,7 +607,7 @@ export default function OrdemServicoDetalhe() {
             <p className="font-semibold text-gray-900">
               {ordem.tecnico_responsavel || 'Técnico Autorizado'}
             </p>
-            <p className="text-[11px] text-gray-500">Técnico PrintGest Outsourcing</p>
+            <p className="text-[11px] text-gray-500">Técnico TD Technology System ERP</p>
           </div>
         </div>
 
@@ -753,6 +757,15 @@ export default function OrdemServicoDetalhe() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Diálogo de Impressão Dedicado com HTML Isolado */}
+      <OrdemServicoPrintDialog
+        open={isPrintDialogOpen}
+        onOpenChange={setIsPrintDialogOpen}
+        ordem={ordem}
+        configEmpresa={configEmpresa}
+        ultimosAtendimentos={ultimosAtendimentos}
+      />
     </div>
   )
 }

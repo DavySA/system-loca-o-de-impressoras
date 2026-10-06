@@ -24,7 +24,7 @@ onRecordAfterCreateSuccess((e) => {
       userRec = new Record(usersCol)
       userRec.setEmail(clienteEmail)
       // Senha temporária aleatória segura
-      const tempPass = 'PrintGest@' + $security.randomString(8)
+      const tempPass = 'TDTech@' + $security.randomString(8)
       userRec.setPassword(tempPass)
       userRec.setVerified(true)
       userRec.set('name', clienteNome)
@@ -45,9 +45,9 @@ onRecordAfterCreateSuccess((e) => {
       const mailer = $app.newMailClient()
       const emailHtml = `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #e5e7eb; border-radius: 8px;">
-          <h2 style="color: #2563eb; margin-top: 0;">Bem-vindo ao portal PrintGest!</h2>
+          <h2 style="color: #2563eb; margin-top: 0;">Bem-vindo ao portal TD Technology System!</h2>
           <p>Olá, <strong>${clienteNome}</strong>,</p>
-          <p>Sua conta de acesso ao portal do cliente no <strong>PrintGest</strong> foi criada com sucesso.</p>
+          <p>Sua conta de acesso ao portal do cliente no <strong>TD Technology System ERP</strong> foi criada com sucesso.</p>
           <p>Pelo portal você poderá acompanhar suas faturas, chamados técnicos e solicitar aberturas de Ordens de Serviço.</p>
           <div style="background-color: #f3f4f6; padding: 16px; border-radius: 6px; margin: 20px 0;">
             <p style="margin: 0 0 8px 0;"><strong>Seu usuário de acesso:</strong> ${clienteEmail}</p>
@@ -60,11 +60,11 @@ onRecordAfterCreateSuccess((e) => {
       mailer.send(
         new MailerMessage({
           from: {
-            address: $app.settings().meta.senderAddress || 'no-reply@printgest.com',
-            name: $app.settings().meta.senderName || 'PrintGest ERP',
+            address: $app.settings().meta.senderAddress || 'no-reply@tdtechnology.com.br',
+            name: $app.settings().meta.senderName || 'TD Technology System ERP',
           },
           to: [{ address: clienteEmail, name: clienteNome }],
-          subject: 'Acesso liberado ao portal do cliente — PrintGest',
+          subject: 'Acesso liberado ao portal do cliente — TD Technology System ERP',
           html: emailHtml,
         }),
       )

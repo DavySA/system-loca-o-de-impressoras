@@ -124,6 +124,7 @@ export interface Fatura {
   desconto?: number
   acrescimo_servicos?: number
   observacoes?: string
+  data_vencimento?: string
   created: string
   updated: string
   expand?: {
@@ -160,4 +161,29 @@ export interface ConfiguracoesEmpresa {
   mensagem_rodape?: string
   created: string
   updated: string
+}
+
+export type TipoSuprimento =
+  | 'toner'
+  | 'cartucho_tinta'
+  | 'cilindro'
+  | 'fusor'
+  | 'correia'
+  | 'peca'
+  | 'outro'
+
+export interface Suprimento {
+  id: string
+  equipamento_id: string
+  data: string
+  tipo: TipoSuprimento
+  item: string
+  quantidade: number
+  custo: number
+  observacoes?: string
+  created: string
+  updated: string
+  expand?: {
+    equipamento_id?: Equipamento
+  }
 }

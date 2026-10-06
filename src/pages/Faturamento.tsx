@@ -349,7 +349,183 @@ export default function Faturamento() {
   }
 
   const handlePrint = () => {
-    window.print()
+    if (!selectedFatura) return
+
+    const contrato = selectedFatura.expand?.contrato_id
+    const equipDoContrato = contrato?.equipamento_id
+      ? equipamentos.find((e) => e.id === contrato.equipamento_id)
+      : null
+
+    const diffMono =
+      (selectedFatura.leitura_atual_mono ?? 0) - (selectedFatura.leitura_anterior_mono ?? 0)
+    const diffColor =
+      (selectedFatura.leitura_atual_color ?? 0) - (selectedFatura.leitura_anterior_color ?? 0)
+
+    const pMono = diffMono > 0 ? diffMono : 0
+    const pColor = diffColor > 0 ? diffColor : 0
+    const pTotal = pMono + pColor > 0 ? pMono + pColor : selectedFatura.paginas_consumidas
+
+    const printWin = window.open('', '_blank', 'width=900,height=750')
+    if (!printWin) {
+      window.print()
+      return
+    }
+
+    const logoUrl = configEmpresa?.logo ? configuracoesService.getLogoUrl(configEmpresa) : ''
+
+    printWin.document.open()
+    printWin.document.write(`
+      <!DOCTYPE html>
+      <html lang="pt-BR">
+        <head>
+          <meta charset="utf-8" />
+          <title>Fatura ${selectedFatura.id.slice(0, 8).toUpperCase()} - TD Technology System ERP</title>
+          <script src="https://cdn.tailwindcss.com"></script>
+          <style>
+            @page { size: A4; margin: 15mm; }
+            body { font-family: sans-serif; color: #111827; background: #fff; }
+          </style>
+        </head>
+        <body class="p-6 bg-white">
+          <div class="max-w-4xl mx-auto space-y-6 text-xs">
+            <!-- Cabeçalho -->
+            <div class="flex items-start justify-between border-b-2 border-gray-900 pb-4">
+              <div class="flex items-center gap-4">
+                ${logoUrl ? `<img src="${logoUrl}" class="h-14 max-w-[150px] object-contain" />` : ''}
+                <div>
+                  <h1 class="text-base font-bold uppercase text-gray-900">${configEmpresa?.razao_social || 'TD Technology System Soluções LTDA'}</h1>
+                  ${configEmpresa?.nome_fantasia ? `<p class="text-xs text-gray-600">${configEmpresa.nome_fantasia}</p>` : ''}
+                  <p class="text-[11px] text-gray-500">CNPJ: ${configEmpresa?.cnpj || '-'} • Tel: ${configEmpresa?.telefone || '-'}</p>
+                  <p class="text-[11px] text-gray-500">${configEmpresa?.endereco || ''} ${configEmpresa?.cidade ? `• ${configEmpresa.cidade}/${configEmpresa.uf}` : ''}</p>
+                </div>
+              </div>
+              <div class="text-right">
+                <div class="border-2 border-gray-900 px-3 py-1.5 rounded text-center">
+                  <span class="block text-[10px] uppercase font-bold text-gray-600">Fatura de Locação</span>
+                  <span class="text-base font-mono font-bold text-gray-900">#${selectedFatura.id.slice(0, 8).toUpperCase()}</span>
+                </div>
+                <p class="text-[11px] text-gray-500 mt-1">Mês Ref: <strong>${formatMonthYear(selectedFatura.mes_referencia)}</strong></p>
+                <p class="text-[10px] uppercase font-bold text-blue-800">Status: ${selectedFatura.status}</p>
+              </div>
+            </div>
+
+            <!-- Dados Cliente -->
+            <div class="p-3 rounded-lg bg-gray-50 border border-gray-200">
+              <span class="text-gray-500 font-bold uppercase text-[10px] block">Dados do Cliente Sacado</span>
+              <p class="text-sm font-bold text-gray-900 mt-0.5">${selectedFatura.expand?.cliente_id?.nome_razao_social || 'Cliente'}</p>
+              <div class="grid grid-cols-2 gap-2 text-gray-600 mt-1">
+                <p>CNPJ / CPF: ${selectedFatura.expand?.cliente_id?.documento || '-'}</p>
+                <p>E-mail: ${selectedFatura.expand?.cliente_id?.email || '-'}</p>
+                <p>Endereço: ${selectedFatura.expand?.cliente_id?.endereco || '-'} ${selectedFatura.expand?.cliente_id?.cidade ? ` - ${selectedFatura.expand?.cliente_id?.cidade}/${selectedFatura.expand?.cliente_id?.uf}` : ''}</p>
+                <p>Data de Emissão: ${formatDate(selectedFatura.created)}</p>
+              </div>
+            </div>
+
+            <!-- Resumo dos Equipamentos e Leituras Antes do Bloco Financeiro -->
+            <div class="border border-blue-300 rounded-lg overflow-hidden bg-blue-50/20">
+              <div class="bg-blue-100/60 px-3 py-2 border-b border-blue-200 flex justify-between items-center">
+                <span class="text-xs font-bold text-blue-950 uppercase">Resumo dos Equipamentos Instalados & Contadores</span>
+                <span class="text-[10px] text-blue-800 font-semibold">Apuração Operacional do Período</span>
+              </div>
+              <div class="p-3">
+                <table class="w-full text-left text-xs">
+                  <thead>
+                    <tr class="text-gray-600 font-semibold border-b border-gray-200 text-[11px]">
+                      <th class="pb-1.5">Equipamento / Modelo</th>
+                      <th class="pb-1.5">S/N / Patrimônio</th>
+                      <th class="pb-1.5 text-right">Páginas Mono (P&B)</th>
+                      <th class="pb-1.5 text-right">Páginas Color</th>
+                      <th class="pb-1.5 text-right">Total Apurado</th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y divide-gray-100 text-gray-800">
+                    <tr>
+                      <td class="py-2 font-medium">${equipDoContrato ? `${equipDoContrato.marca} ${equipDoContrato.modelo}` : 'Equipamento em Locação'}</td>
+                      <td class="py-2 font-mono text-gray-600">S/N: ${equipDoContrato?.numero_serie || '-'} ${equipDoContrato?.numero_patrimonio ? `• Pat: ${equipDoContrato.numero_patrimonio}` : ''}</td>
+                      <td class="py-2 text-right font-mono">${pMono.toLocaleString('pt-BR')} págs</td>
+                      <td class="py-2 text-right font-mono">${pColor.toLocaleString('pt-BR')} págs</td>
+                      <td class="py-2 text-right font-mono font-bold text-blue-900">${pTotal.toLocaleString('pt-BR')} págs</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- Bloco de Valores -->
+            <div class="border border-gray-300 rounded-lg overflow-hidden">
+              <table class="w-full text-left text-xs">
+                <thead class="bg-gray-100 text-gray-700 font-semibold border-b border-gray-300">
+                  <tr>
+                    <th class="py-2.5 px-3">Item / Descrição</th>
+                    <th class="py-2.5 px-3 text-right">Franquia</th>
+                    <th class="py-2.5 px-3 text-right">Consumo</th>
+                    <th class="py-2.5 px-3 text-right">Excedente</th>
+                    <th class="py-2.5 px-3 text-right">Valor Total</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-200">
+                  <tr>
+                    <td class="py-2.5 px-3 font-medium">Locação Mensal de Equipamento de Impressão</td>
+                    <td class="py-2.5 px-3 text-right">${selectedFatura.paginas_contratadas > 0 ? `${selectedFatura.paginas_contratadas.toLocaleString('pt-BR')} págs` : 'Sem franquia'}</td>
+                    <td class="py-2.5 px-3 text-right">-</td>
+                    <td class="py-2.5 px-3 text-right">-</td>
+                    <td class="py-2.5 px-3 text-right font-semibold">${formatCurrency(selectedFatura.valor_base)}</td>
+                  </tr>
+                  <tr>
+                    <td class="py-2.5 px-3 font-medium">Páginas Adicionais / Consumo Excedente</td>
+                    <td class="py-2.5 px-3 text-right">-</td>
+                    <td class="py-2.5 px-3 text-right">${selectedFatura.paginas_consumidas.toLocaleString('pt-BR')} págs</td>
+                    <td class="py-2.5 px-3 text-right text-amber-700 font-semibold">+${selectedFatura.paginas_excedentes.toLocaleString('pt-BR')} págs</td>
+                    <td class="py-2.5 px-3 text-right font-semibold">${formatCurrency(selectedFatura.valor_excedente)}</td>
+                  </tr>
+                  ${
+                    selectedFatura.acrescimo_servicos && selectedFatura.acrescimo_servicos > 0
+                      ? `
+                    <tr>
+                      <td colspan="4" class="py-2.5 px-3 text-gray-700 font-medium">Serviços Adicionais / Acréscimos</td>
+                      <td class="py-2.5 px-3 text-right text-emerald-700 font-semibold">+${formatCurrency(selectedFatura.acrescimo_servicos)}</td>
+                    </tr>
+                  `
+                      : ''
+                  }
+                  ${
+                    selectedFatura.desconto && selectedFatura.desconto > 0
+                      ? `
+                    <tr>
+                      <td colspan="4" class="py-2.5 px-3 text-gray-700 font-medium">Descontos Concedidos</td>
+                      <td class="py-2.5 px-3 text-right text-red-600 font-semibold">−${formatCurrency(selectedFatura.desconto)}</td>
+                    </tr>
+                  `
+                      : ''
+                  }
+                </tbody>
+                <tfoot class="bg-gray-100 border-t-2 border-gray-400 font-bold">
+                  <tr>
+                    <td colspan="4" class="py-3 px-3 text-right uppercase">TOTAL GERAL A PAGAR:</td>
+                    <td class="py-3 px-3 text-right text-blue-900 text-sm font-mono">${formatCurrency(selectedFatura.valor_total)}</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+
+            <!-- Rodapé da Empresa -->
+            <div class="border-t border-gray-200 pt-4 text-center text-gray-500 text-[10.5px]">
+              <p class="font-semibold text-gray-700">${configEmpresa?.mensagem_rodape || 'TD Technology System ERP — Eficiência, qualidade e tecnologia em outsourcing de impressão.'}</p>
+              <p class="text-[9px] text-gray-400 mt-0.5">Emitido em ${new Date().toLocaleDateString('pt-BR')} às ${new Date().toLocaleTimeString('pt-BR')}</p>
+            </div>
+          </div>
+          <script>
+            window.addEventListener('load', () => {
+              setTimeout(() => {
+                window.focus();
+                window.print();
+              }, 400);
+            });
+          </script>
+        </body>
+      </html>
+    `)
+    printWin.document.close()
   }
 
   return (
@@ -881,7 +1057,7 @@ export default function Faturamento() {
                   )}
                   <div>
                     <h2 className="text-lg font-bold uppercase text-gray-900">
-                      {configEmpresa?.razao_social || 'PrintGest Soluções'}
+                      {configEmpresa?.razao_social || 'TD Technology System ERP'}
                     </h2>
                     {configEmpresa?.nome_fantasia && (
                       <p className="text-xs text-gray-600">{configEmpresa.nome_fantasia}</p>
@@ -939,6 +1115,76 @@ export default function Faturamento() {
                       : ''}
                   </p>
                   <p>Emissão: {formatDate(selectedFatura.created)}</p>
+                </div>
+              </div>
+
+              {/* RESUMO DOS EQUIPAMENTOS INSTALADOS E QUANTIDADES DE PÁGINAS (Antes do bloco de valores) */}
+              <div className="border border-blue-200 rounded-xl overflow-hidden bg-blue-50/30">
+                <div className="bg-blue-600/10 px-3 py-2 border-b border-blue-200 flex items-center justify-between">
+                  <span className="text-xs font-bold text-blue-950 uppercase tracking-wide">
+                    Equipamentos Instalados & Contadores do Período
+                  </span>
+                  <span className="text-[10px] text-blue-700 font-semibold">
+                    Resumo Operacional de Bilhetagem
+                  </span>
+                </div>
+                <div className="p-3 overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead>
+                      <tr className="text-gray-600 font-semibold border-b border-gray-200 text-[11px]">
+                        <th className="pb-1.5">Equipamento / Modelo</th>
+                        <th className="pb-1.5">S/N / Patrimônio</th>
+                        <th className="pb-1.5 text-right">Págs Mono (P&B)</th>
+                        <th className="pb-1.5 text-right">Págs Color</th>
+                        <th className="pb-1.5 text-right">Total Apurado</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100 text-gray-800">
+                      {(() => {
+                        const contrato = selectedFatura.expand?.contrato_id
+                        const equipDoContrato = contrato?.equipamento_id
+                          ? equipamentos.find((e) => e.id === contrato.equipamento_id)
+                          : null
+
+                        const diffMono =
+                          (selectedFatura.leitura_atual_mono ?? 0) -
+                          (selectedFatura.leitura_anterior_mono ?? 0)
+                        const diffColor =
+                          (selectedFatura.leitura_atual_color ?? 0) -
+                          (selectedFatura.leitura_anterior_color ?? 0)
+
+                        const pMono = diffMono > 0 ? diffMono : 0
+                        const pColor = diffColor > 0 ? diffColor : 0
+                        const pTotal =
+                          pMono + pColor > 0 ? pMono + pColor : selectedFatura.paginas_consumidas
+
+                        return (
+                          <tr>
+                            <td className="py-2 font-medium text-gray-900">
+                              {equipDoContrato
+                                ? `${equipDoContrato.marca} ${equipDoContrato.modelo}`
+                                : 'Equipamento Contratado'}
+                            </td>
+                            <td className="py-2 font-mono text-gray-600 text-[11px]">
+                              S/N: {equipDoContrato?.numero_serie || '-'}{' '}
+                              {equipDoContrato?.numero_patrimonio
+                                ? `• Pat: ${equipDoContrato.numero_patrimonio}`
+                                : ''}
+                            </td>
+                            <td className="py-2 text-right font-mono text-gray-700">
+                              {pMono.toLocaleString('pt-BR')} págs
+                            </td>
+                            <td className="py-2 text-right font-mono text-gray-700">
+                              {pColor.toLocaleString('pt-BR')} págs
+                            </td>
+                            <td className="py-2 text-right font-mono font-bold text-blue-900">
+                              {pTotal.toLocaleString('pt-BR')} págs
+                            </td>
+                          </tr>
+                        )
+                      })()}
+                    </tbody>
+                  </table>
                 </div>
               </div>
 

@@ -38,6 +38,17 @@ export default function Dashboard() {
   const [expiringContracts, setExpiringContracts] = useState<
     { contrato: Contrato; motivo: string }[]
   >([])
+  const [alertasAutomaticos, setAlertasAutomaticos] = useState<
+    {
+      id: string
+      tipo: 'contrato_vencendo' | 'fatura_a_vencer' | 'fatura_vencida' | 'excedente'
+      titulo: string
+      descricao: string
+      link: string
+      dataVencimento?: string
+      gravidade: 'critica' | 'atencao' | 'info'
+    }[]
+  >([])
   const [monthlyRevenueData, setMonthlyRevenueData] = useState<{ label: string; value: number }[]>(
     [],
   )
@@ -125,30 +136,100 @@ export default function Dashboard() {
         .slice(0, 5)
       setRecentOrders(sortedOrders)
 
-      // 7. Alertas de Contrato: vencendo em 30 dias ou páginas excedentes ultrapassadas
-      const alerts: { contrato: Contrato; motivo: string }[] = []
+      // 7. Alertas Automáticos: Contratos vencendo (<= 30 dias), Faturas a vencer (<= 7 dias) e Faturas vencidas
+      const listaAlertas: {
+        id: string
+        tipo: 'contrato_vencendo' | 'fatura_a_vencer' | 'fatura_vencida' | 'excedente'
+        titulo: string
+        descricao: string
+        link: string
+        dataVencimento?: string
+        gravidade: 'critica' | 'atencao' | 'info'
+      }[] = []
+
+      const alertsContratos: { contrato: Contrato; motivo: string }[] = []
       const thirtyDaysFromNow = new Date()
       thirtyDaysFromNow.setDate(thirtyDaysFromNow.getDate() + 30)
 
+      const sevenDaysFromNow = new Date()
+      sevenDaysFromNow.setDate(sevenDaysFromNow.getDate() + 7)
+
+      // a) Contratos vencendo em <= 30 dias
       for (const c of contratos) {
         if (c.status === 'ativo' && c.data_fim) {
           const endDate = new Date(c.data_fim)
           if (endDate <= thirtyDaysFromNow && endDate >= now) {
             const diffDays = Math.ceil((endDate.getTime() - now.getTime()) / (1000 * 3600 * 24))
-            alerts.push({
+            alertsContratos.push({
               contrato: c,
               motivo: `Contrato vence em ${diffDays} dias (${formatDate(c.data_fim)}).`,
+            })
+            listaAlertas.push({
+              id: `contrato-${c.id}`,
+              tipo: 'contrato_vencendo',
+              titulo: `Contrato Vencendo (${diffDays} dias)`,
+              descricao: `Cliente: ${c.expand?.cliente_id?.nome_razao_social || 'Cliente'} — Vencimento: ${formatDate(c.data_fim)}`,
+              link: `/clientes/${c.cliente_id}`,
+              dataVencimento: c.data_fim,
+              gravidade: diffDays <= 7 ? 'critica' : 'atencao',
             })
           }
         }
       }
 
-      // Alertas de faturas com excedentes recentes
+      // b) Faturas Vencidas e Faturas a Vencer (<= 7 dias)
+      for (const f of faturas) {
+        if (f.status === 'paga' || f.status === 'cancelada') continue
+
+        const cli = clientes.find((c) => c.id === f.cliente_id)
+        // Data de vencimento: usar f.data_vencimento ou dia 10 do mês seguinte à criação/referência
+        let dtVenc: Date
+        if (f.data_vencimento) {
+          dtVenc = new Date(f.data_vencimento)
+        } else if (f.mes_referencia) {
+          const [anoStr, mesStr] = f.mes_referencia.split('-')
+          const anoRef = parseInt(anoStr, 10)
+          const mesRef = parseInt(mesStr, 10)
+          // Vencimento padrão: dia 10 do mês seguinte
+          dtVenc = new Date(anoRef, mesRef, 10)
+        } else {
+          dtVenc = new Date(new Date(f.created).getTime() + 10 * 24 * 3600 * 1000)
+        }
+
+        const diffDias = Math.ceil((dtVenc.getTime() - now.getTime()) / (1000 * 3600 * 24))
+
+        if (f.status === 'vencida' || dtVenc < now) {
+          // Fatura vencida
+          const diasAtraso = Math.max(1, Math.abs(diffDias))
+          listaAlertas.push({
+            id: `fatura-vencida-${f.id}`,
+            tipo: 'fatura_vencida',
+            titulo: 'Fatura Vencida',
+            descricao: `${cli?.nome_razao_social || 'Cliente'} — ${formatCurrency(f.valor_total)} (${diasAtraso} dias em atraso)`,
+            link: '/faturamento',
+            dataVencimento: dtVenc.toISOString(),
+            gravidade: 'critica',
+          })
+        } else if (diffDias <= 7 && diffDias >= 0) {
+          // Fatura a vencer em até 7 dias
+          listaAlertas.push({
+            id: `fatura-avencer-${f.id}`,
+            tipo: 'fatura_a_vencer',
+            titulo: `Fatura a Vencer (${diffDias === 0 ? 'Hoje' : `em ${diffDias} dias`})`,
+            descricao: `${cli?.nome_razao_social || 'Cliente'} — ${formatCurrency(f.valor_total)} (Venc: ${formatDate(dtVenc.toISOString())})`,
+            link: '/faturamento',
+            dataVencimento: dtVenc.toISOString(),
+            gravidade: 'atencao',
+          })
+        }
+      }
+
+      // c) Excedentes no mês
       for (const f of faturas) {
         if (f.paginas_excedentes > 0 && f.mes_referencia === currentMonthStr) {
           const c = contratos.find((ct) => ct.id === f.contrato_id)
           if (c) {
-            alerts.push({
+            alertsContratos.push({
               contrato: c,
               motivo: `Páginas excedentes atingidas no mês: +${f.paginas_excedentes} págs gerando ${formatCurrency(f.valor_excedente)}.`,
             })
@@ -156,7 +237,8 @@ export default function Dashboard() {
         }
       }
 
-      setExpiringContracts(alerts)
+      setExpiringContracts(alertsContratos)
+      setAlertasAutomaticos(listaAlertas)
     } catch (e) {
       console.error('Erro ao carregar dados do dashboard:', e)
     } finally {
@@ -359,38 +441,69 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
-        {/* Painel Alertas de Contrato */}
-        <Card className="border border-gray-200 shadow-xs">
+        {/* Painel Central de Alertas Automáticos (Contratos & Faturas) */}
+        <Card className="border border-gray-200 shadow-xs flex flex-col">
           <CardHeader className="pb-3 flex flex-row items-center justify-between">
-            <CardTitle className="text-base font-semibold text-gray-900 flex items-center gap-2">
-              <AlertTriangle className="w-4 h-4 text-amber-500" />
-              Alertas de Contrato
-            </CardTitle>
-            <span className="text-xs text-gray-400 font-medium">Atenção</span>
+            <div>
+              <CardTitle className="text-base font-semibold text-gray-900 flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-amber-500" />
+                Alertas Automáticos
+              </CardTitle>
+              <p className="text-[11px] text-gray-500 mt-0.5">
+                Contratos vencendo (≤30 dias), faturas a vencer (≤7 dias) e em atraso
+              </p>
+            </div>
+            {alertasAutomaticos.length > 0 && (
+              <span className="text-xs font-bold text-red-600 bg-red-50 border border-red-200 px-2 py-0.5 rounded-full">
+                {alertasAutomaticos.length} pendentes
+              </span>
+            )}
           </CardHeader>
-          <CardContent className="space-y-3">
-            {expiringContracts.length === 0 ? (
-              <div className="p-4 rounded-lg bg-gray-50 text-center text-xs text-gray-500">
-                Nenhum contrato vencendo nos próximos 30 dias ou com excedente crítico.
+          <CardContent className="space-y-2.5 max-h-[340px] overflow-y-auto flex-1">
+            {alertasAutomaticos.length === 0 ? (
+              <div className="p-6 rounded-lg bg-emerald-50/50 border border-emerald-100 text-center text-xs text-emerald-800">
+                <p className="font-semibold">Nenhuma pendência crítica!</p>
+                <p className="text-[11px] text-emerald-600 mt-1">
+                  Todos os contratos estão vigentes e as faturas estão em dia.
+                </p>
               </div>
             ) : (
-              expiringContracts.map((item, idx) => (
+              alertasAutomaticos.map((alerta) => (
                 <div
-                  key={idx}
-                  className="p-3 rounded-lg border border-amber-200 bg-amber-50/70 text-xs text-amber-900 flex items-start gap-2.5 transition-all hover:bg-amber-100/70"
+                  key={alerta.id}
+                  className={`p-3 rounded-lg border text-xs flex items-start gap-2.5 transition-all ${
+                    alerta.gravidade === 'critica'
+                      ? 'border-red-200 bg-red-50/80 text-red-900'
+                      : 'border-amber-200 bg-amber-50/80 text-amber-900'
+                  }`}
                 >
-                  <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                  <div className="flex-1">
-                    <p className="font-semibold text-gray-900">
-                      {item.contrato.expand?.cliente_id?.nome_razao_social || 'Cliente'}
-                    </p>
-                    <p className="text-gray-700 mt-0.5 leading-snug">{item.motivo}</p>
-                    <div className="mt-2 flex items-center gap-2">
+                  <AlertTriangle
+                    className={`w-4 h-4 shrink-0 mt-0.5 ${
+                      alerta.gravidade === 'critica' ? 'text-red-600' : 'text-amber-600'
+                    }`}
+                  />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between">
+                      <p className="font-bold text-gray-900 leading-tight truncate">
+                        {alerta.titulo}
+                      </p>
+                      <span
+                        className={`text-[9.5px] font-bold uppercase px-1.5 py-0.5 rounded ${
+                          alerta.gravidade === 'critica'
+                            ? 'bg-red-200 text-red-900'
+                            : 'bg-amber-200 text-amber-900'
+                        }`}
+                      >
+                        {alerta.gravidade === 'critica' ? 'Urgente' : 'Atenção'}
+                      </span>
+                    </div>
+                    <p className="text-gray-700 mt-1 leading-snug">{alerta.descricao}</p>
+                    <div className="mt-2">
                       <Link
-                        to={`/clientes/${item.contrato.cliente_id}`}
+                        to={alerta.link}
                         className="text-[11px] font-semibold text-blue-700 hover:underline inline-flex items-center gap-1"
                       >
-                        Ver contrato <ArrowRight className="w-3 h-3" />
+                        Ver detalhes <ArrowRight className="w-3 h-3" />
                       </Link>
                     </div>
                   </div>

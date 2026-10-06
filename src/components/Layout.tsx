@@ -11,13 +11,28 @@ import {
   Bell,
   Menu,
   X,
+  BarChart3,
+  Package,
+  Settings,
 } from 'lucide-react'
 import { useAuth } from '@/context/AuthContext'
 import { ordensServicoService } from '@/services/ordensServico'
+import { faturasService } from '@/services/faturas'
+import { contratosService } from '@/services/contratos'
 import { useRealtime } from '@/hooks/use-realtime'
 import { cn } from '@/lib/utils'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
+import defaultLogo from '@/assets/logo-png-copia-13bb2.png'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import { formatDate, formatCurrency } from '@/lib/formatters'
 
 interface LayoutProps {
   children?: React.ReactNode
@@ -30,30 +45,133 @@ export default function Layout({ children }: LayoutProps) {
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false)
   const [openOsCount, setOpenOsCount] = useState<number>(0)
 
+  // Alertas de notificações do sistema para o sino
+  const [notificacoes, setNotificacoes] = useState<
+    {
+      id: string
+      tipo: 'os' | 'fatura_vencida' | 'fatura_avencer' | 'contrato_vencendo'
+      titulo: string
+      descricao: string
+      link: string
+      dataVencimento?: string
+      prioridade: 'alta' | 'media' | 'baixa'
+    }[]
+  >([])
+
   const role = user?.role || 'administrador'
 
-  // Carregar contagem de ordens de serviço abertas
-  const loadOpenOsCount = async () => {
+  // Carregar contagem de ordens de serviço abertas e alertas reativos
+  const loadAlertasENotificacoes = async () => {
     try {
-      let filter = 'status != "concluida"'
+      const now = new Date()
+      const thirtyDays = new Date()
+      thirtyDays.setDate(thirtyDays.getDate() + 30)
+
+      const sevenDays = new Date()
+      sevenDays.setDate(sevenDays.getDate() + 7)
+
+      let osFilter = 'status != "concluida"'
       if (role === 'cliente' && user?.cliente_id) {
-        filter += ` && cliente_id = "${user.cliente_id}"`
+        osFilter += ` && cliente_id = "${user.cliente_id}"`
       }
-      const list = await ordensServicoService.getAll(filter)
-      setOpenOsCount(list.length)
+
+      const [osList, fatList, contList] = await Promise.all([
+        ordensServicoService.getAll(osFilter),
+        faturasService.getAll(
+          role === 'cliente' && user?.cliente_id ? `cliente_id = "${user.cliente_id}"` : '',
+        ),
+        role === 'administrador'
+          ? contratosService.getAll('status = "ativo"')
+          : Promise.resolve([]),
+      ])
+
+      setOpenOsCount(osList.length)
+
+      const alerts: typeof notificacoes = []
+
+      // 1. Ordens de Serviço abertas (com alta prioridade primeiro)
+      osList.slice(0, 3).forEach((os) => {
+        alerts.push({
+          id: `os-${os.id}`,
+          tipo: 'os',
+          titulo: `O.S. ${os.id.slice(0, 8).toUpperCase()} pendente`,
+          descricao: os.descricao_problema || 'Atendimento aguardando conclusão',
+          link: `/ordens-de-servico/${os.id}`,
+          prioridade: os.prioridade === 'alta' ? 'alta' : 'media',
+        })
+      })
+
+      // 2. Faturas vencidas e a vencer
+      fatList.forEach((f) => {
+        if (f.status === 'paga' || f.status === 'cancelada') return
+        let dVenc: Date
+        if (f.data_vencimento) {
+          dVenc = new Date(f.data_vencimento)
+        } else if (f.mes_referencia) {
+          const [anoStr, mesStr] = f.mes_referencia.split('-')
+          const anoRef = parseInt(anoStr, 10)
+          const mesRef = parseInt(mesStr, 10)
+          dVenc = new Date(anoRef, mesRef, 10)
+        } else {
+          dVenc = new Date(new Date(f.created).getTime() + 10 * 24 * 3600 * 1000)
+        }
+
+        const diffDias = Math.ceil((dVenc.getTime() - now.getTime()) / (1000 * 3600 * 24))
+
+        if (f.status === 'vencida' || dVenc < now) {
+          alerts.push({
+            id: `fat-venc-${f.id}`,
+            tipo: 'fatura_vencida',
+            titulo: 'Fatura Vencida em Atraso',
+            descricao: `Fatura de ${formatCurrency(f.valor_total)} vencida em ${formatDate(dVenc.toISOString())}`,
+            link: '/faturamento',
+            prioridade: 'alta',
+          })
+        } else if (diffDias <= 7 && diffDias >= 0) {
+          alerts.push({
+            id: `fat-avenc-${f.id}`,
+            tipo: 'fatura_avencer',
+            titulo: 'Fatura a Vencer',
+            descricao: `Vence em ${formatDate(dVenc.toISOString())}: ${formatCurrency(f.valor_total)}`,
+            link: '/faturamento',
+            prioridade: 'media',
+          })
+        }
+      })
+
+      // 3. Contratos vencendo em <= 30 dias (apenas admin)
+      if (role === 'administrador') {
+        contList.forEach((c) => {
+          if (c.data_fim) {
+            const dFim = new Date(c.data_fim)
+            if (dFim <= thirtyDays && dFim >= now) {
+              alerts.push({
+                id: `cont-${c.id}`,
+                tipo: 'contrato_vencendo',
+                titulo: 'Contrato Vencendo',
+                descricao: `Contrato do cliente vence em ${formatDate(c.data_fim)}`,
+                link: `/clientes/${c.cliente_id}`,
+                prioridade: 'media',
+              })
+            }
+          }
+        })
+      }
+
+      setNotificacoes(alerts)
     } catch (e) {
       console.error(e)
     }
   }
 
   useEffect(() => {
-    loadOpenOsCount()
-  }, [])
+    loadAlertasENotificacoes()
+  }, [role, user?.cliente_id])
 
-  // Realtime para atualizar contagem de O.S.
-  useRealtime('ordens_servico', () => {
-    loadOpenOsCount()
-  })
+  // Realtime para atualizar contadores e alertas
+  useRealtime('ordens_servico', () => loadAlertasENotificacoes())
+  useRealtime('faturas', () => loadAlertasENotificacoes())
+  useRealtime('contratos', () => loadAlertasENotificacoes())
 
   // Fechar drawer mobile ao trocar de rota
   useEffect(() => {
@@ -77,9 +195,21 @@ export default function Layout({ children }: LayoutProps) {
       icon: Receipt,
       roles: ['administrador', 'cliente'],
     },
+    {
+      label: 'Suprimentos',
+      path: '/suprimentos',
+      icon: Package,
+      roles: ['administrador'],
+    },
+    {
+      label: 'Relatórios',
+      path: '/relatorios',
+      icon: BarChart3,
+      roles: ['administrador'],
+    },
     { label: 'Serviços', path: '/servicos', icon: Wrench, roles: ['administrador'] },
     { label: 'Usuários', path: '/usuarios', icon: Users, roles: ['administrador'] },
-    { label: 'Personalizar', path: '/personalizar', icon: Wrench, roles: ['administrador'] },
+    { label: 'Personalizar', path: '/personalizar', icon: Settings, roles: ['administrador'] },
   ].filter((item) => item.roles.includes(role))
 
   // Obter título da página atual
@@ -96,11 +226,13 @@ export default function Layout({ children }: LayoutProps) {
     if (path.startsWith('/servicos')) return 'Catálogo de Serviços'
     if (path.startsWith('/usuarios')) return 'Gerenciamento de Usuários'
     if (path.startsWith('/personalizar')) return 'Personalizar Empresa & Cabeçalho'
-    return 'PrintGest'
+    if (path.startsWith('/relatorios')) return 'Relatórios Mensais'
+    if (path.startsWith('/suprimentos')) return 'Gestão de Suprimentos & Peças'
+    return 'TD Technology System ERP'
   }
 
   const getInitials = (name?: string) => {
-    if (!name) return 'PG'
+    if (!name) return 'TD'
     const parts = name.trim().split(/\s+/)
     if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase()
     return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
@@ -136,15 +268,21 @@ export default function Layout({ children }: LayoutProps) {
         )}
       >
         {/* Logo Header */}
-        <div className="h-16 flex items-center justify-between px-4 border-b border-[#374151]">
-          <div className="flex items-center gap-3 overflow-hidden">
-            <div className="w-10 h-10 rounded-lg bg-blue-600 flex items-center justify-center shrink-0 shadow-md">
-              <Printer className="w-5 h-5 text-white" />
+        <div className="h-16 flex items-center justify-between px-3.5 border-b border-[#374151]">
+          <div className="flex items-center gap-2.5 overflow-hidden">
+            <div className="w-10 h-10 rounded-lg bg-white/10 p-1 flex items-center justify-center shrink-0 border border-white/10">
+              <img
+                src={defaultLogo}
+                alt="TD Technology System ERP"
+                className="w-full h-full object-contain"
+              />
             </div>
             <div className="flex flex-col md:hidden lg:flex overflow-hidden">
-              <span className="font-semibold text-lg text-white tracking-tight">PrintGest</span>
-              <span className="text-[10px] text-gray-400 font-medium uppercase tracking-wider">
-                Locação ERP
+              <span className="font-bold text-sm text-white tracking-tight leading-none truncate">
+                TD Technology
+              </span>
+              <span className="text-[10px] text-blue-400 font-semibold uppercase tracking-wider mt-0.5">
+                System ERP
               </span>
             </div>
           </div>
@@ -256,20 +394,70 @@ export default function Layout({ children }: LayoutProps) {
           </div>
 
           <div className="flex items-center gap-3 sm:gap-4">
-            {/* Bell Notifications */}
-            <button
-              type="button"
-              onClick={() => navigate('/ordens-de-servico')}
-              className="relative p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
-              title={`${openOsCount} ordens de serviço abertas`}
-            >
-              <Bell className="w-5 h-5" />
-              {openOsCount > 0 && (
-                <span className="absolute top-1.5 right-1.5 w-4 h-4 text-[10px] font-bold text-white bg-red-600 rounded-full flex items-center justify-center animate-pulse">
-                  {openOsCount}
-                </span>
-              )}
-            </button>
+            {/* Central de Notificações com Dropdown */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  className="relative p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors focus:outline-none"
+                  title="Central de Notificações"
+                >
+                  <Bell className="w-5 h-5" />
+                  {notificacoes.length > 0 && (
+                    <span className="absolute top-1.5 right-1.5 w-4 h-4 text-[10px] font-bold text-white bg-red-600 rounded-full flex items-center justify-center animate-pulse">
+                      {notificacoes.length > 9 ? '9+' : notificacoes.length}
+                    </span>
+                  )}
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-80 p-0 shadow-lg border-gray-200">
+                <DropdownMenuLabel className="p-3 bg-gray-50 border-b border-gray-100 flex items-center justify-between text-xs">
+                  <span className="font-bold text-gray-900">Central de Alertas</span>
+                  <span className="text-[10px] font-semibold text-blue-600">
+                    {notificacoes.length} {notificacoes.length === 1 ? 'aviso' : 'avisos'}
+                  </span>
+                </DropdownMenuLabel>
+                <div className="max-h-72 overflow-y-auto divide-y divide-gray-100 text-xs">
+                  {notificacoes.length === 0 ? (
+                    <div className="p-4 text-center text-gray-500 text-xs">
+                      Nenhum alerta pendente no momento.
+                    </div>
+                  ) : (
+                    notificacoes.map((item) => (
+                      <DropdownMenuItem
+                        key={item.id}
+                        onClick={() => navigate(item.link)}
+                        className="p-3 cursor-pointer hover:bg-blue-50/50 flex flex-col items-start gap-0.5"
+                      >
+                        <div className="flex items-center justify-between w-full">
+                          <span
+                            className={cn(
+                              'font-bold text-[11px]',
+                              item.prioridade === 'alta' ? 'text-red-700' : 'text-blue-900',
+                            )}
+                          >
+                            {item.titulo}
+                          </span>
+                          <span
+                            className={cn(
+                              'text-[9px] px-1.5 py-0.2 rounded font-semibold uppercase',
+                              item.prioridade === 'alta'
+                                ? 'bg-red-100 text-red-800'
+                                : 'bg-blue-100 text-blue-800',
+                            )}
+                          >
+                            {item.prioridade === 'alta' ? 'Urgente' : 'Aviso'}
+                          </span>
+                        </div>
+                        <p className="text-gray-600 text-[11px] leading-tight line-clamp-2">
+                          {item.descricao}
+                        </p>
+                      </DropdownMenuItem>
+                    ))
+                  )}
+                </div>
+              </DropdownMenuContent>
+            </DropdownMenu>
 
             {/* User Info Desktop */}
             <div className="hidden sm:flex items-center gap-2.5 pl-2 border-l border-gray-200">
@@ -292,7 +480,8 @@ export default function Layout({ children }: LayoutProps) {
 
         {/* Footer */}
         <footer className="py-4 px-6 bg-white border-t border-[#E5E7EB] text-center text-xs text-gray-500">
-          © 2025 PrintGest — Sistema de Gestão de Locação de Impressoras • v1.0.0
+          © {new Date().getFullYear()} TD Technology System ERP — Sistema de Gestão de Locação de
+          Impressoras
         </footer>
       </div>
     </div>

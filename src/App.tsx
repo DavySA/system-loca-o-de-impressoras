@@ -19,6 +19,8 @@ import OrdensServico from './pages/OrdensServico'
 import OrdemServicoDetalhe from './pages/OrdemServicoDetalhe'
 import Faturamento from './pages/Faturamento'
 import Servicos from './pages/Servicos'
+import Relatorios from './pages/Relatorios'
+import Suprimentos from './pages/Suprimentos'
 import Usuarios from './pages/Usuarios'
 import Personalizar from './pages/Personalizar'
 import NotFound from './pages/NotFound'
@@ -44,6 +46,8 @@ export function App() {
             <Route path="/clientes/:id" element={<ClienteDetalhe />} />
             <Route path="/equipamentos" element={<Equipamentos />} />
             <Route path="/equipamentos/:id" element={<EquipamentoDetalhe />} />
+            <Route path="/suprimentos" element={<Suprimentos />} />
+            <Route path="/relatorios" element={<Relatorios />} />
             <Route path="/servicos" element={<Servicos />} />
             <Route path="/usuarios" element={<Usuarios />} />
             <Route path="/personalizar" element={<Personalizar />} />

@@ -156,7 +156,7 @@ export default function Personalizar() {
                     id="cfg-razao"
                     value={formData.razao_social}
                     onChange={(e) => setFormData({ ...formData, razao_social: e.target.value })}
-                    placeholder="Ex: PrintGest Locação e Serviços LTDA"
+                    placeholder="Ex: TD Technology System LTDA"
                     required
                   />
                 </div>
@@ -167,7 +167,7 @@ export default function Personalizar() {
                     id="cfg-fantasia"
                     value={formData.nome_fantasia}
                     onChange={(e) => setFormData({ ...formData, nome_fantasia: e.target.value })}
-                    placeholder="Ex: PrintGest Outsourcing de Impressão"
+                    placeholder="Ex: TD Technology System ERP"
                   />
                 </div>
 
@@ -241,7 +241,7 @@ export default function Personalizar() {
                     type="email"
                     value={formData.email}
                     onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                    placeholder="Ex: contato@printgest.com.br"
+                    placeholder="Ex: contato@tdtechnology.com.br"
                   />
                 </div>
 
@@ -251,7 +251,7 @@ export default function Personalizar() {
                     id="cfg-web"
                     value={formData.website}
                     onChange={(e) => setFormData({ ...formData, website: e.target.value })}
-                    placeholder="Ex: www.printgest.com.br"
+                    placeholder="Ex: www.tdtechnology.com.br"
                   />
                 </div>
               </div>
@@ -287,7 +287,7 @@ export default function Personalizar() {
                   rows={2}
                   value={formData.mensagem_rodape}
                   onChange={(e) => setFormData({ ...formData, mensagem_rodape: e.target.value })}
-                  placeholder="Ex: PrintGest — Eficiência, qualidade e tecnologia em outsourcing de impressão."
+                  placeholder="Ex: TD Technology System ERP — Eficiência, qualidade e tecnologia em outsourcing de impressão."
                 />
               </div>
 

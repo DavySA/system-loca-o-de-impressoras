@@ -25,7 +25,7 @@ export const usuariosService = {
   },
 
   async create(data: CreateUserData): Promise<AppUser> {
-    const password = data.password || 'PrintGest@' + Math.random().toString(36).slice(-8)
+    const password = data.password || 'TDTech@' + Math.random().toString(36).slice(-8)
     const payload: Record<string, any> = {
       email: data.email,
       password: password,

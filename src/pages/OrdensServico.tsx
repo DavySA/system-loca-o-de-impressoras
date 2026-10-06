@@ -19,6 +19,8 @@ import { faturasService } from '@/services/faturas'
 import { equipamentosService } from '@/services/equipamentos'
 import { servicosService } from '@/services/servicos'
 import { contratosService } from '@/services/contratos'
+import { configuracoesService } from '@/services/configuracoes'
+import { OrdemServicoPrintDialog } from '@/components/OrdemServicoPrintDialog'
 import { formatOSCode, formatDate, formatCurrency } from '@/lib/formatters'
 import { extractFieldErrors } from '@/lib/pocketbase/errors'
 import { useAuth } from '@/context/AuthContext'
@@ -59,6 +61,12 @@ export default function OrdensServico() {
   const [servicos, setServicos] = useState<Servico[]>([])
   const [isLoading, setIsLoading] = useState(true)
 
+  // Estado para impressão direta da listagem
+  const [osParaImprimir, setOsParaImprimir] = useState<OrdemServico | null>(null)
+  const [configEmpresa, setConfigEmpresa] = useState<any>(null)
+  const [ultimosAtendimentosPrint, setUltimosAtendimentosPrint] = useState<OrdemServico[]>([])
+  const [isPrintDialogOpen, setIsPrintDialogOpen] = useState(false)
+
   // Filtros
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('todas')
@@ -89,16 +97,18 @@ export default function OrdensServico() {
         osFilter = `cliente_id = "${clienteIdVinculado}"`
       }
 
-      const [osList, clList, eqList, svList] = await Promise.all([
+      const [osList, clList, eqList, svList, cfg] = await Promise.all([
         ordensServicoService.getAll(osFilter),
         clientesService.getAll('status = "ativo"'),
         equipamentosService.getAll(),
         servicosService.getAll(),
+        configuracoesService.get(),
       ])
       setOrdens(osList)
       setClientes(clList)
       setEquipamentos(eqList)
       setServicos(svList)
+      setConfigEmpresa(cfg)
 
       // Checar se veio com state de preselect
       const state = location.state as {
@@ -293,6 +303,24 @@ export default function OrdensServico() {
     return matchesSearch && matchesStatus && matchesPrio
   })
 
+  const handleImprimirOsDaLista = async (os: OrdemServico, e: React.MouseEvent) => {
+    e.stopPropagation()
+    setOsParaImprimir(os)
+    if (os.equipamento_id) {
+      try {
+        const historico = await ordensServicoService.getAll(
+          `equipamento_id = "${os.equipamento_id}" && id != "${os.id}"`,
+        )
+        setUltimosAtendimentosPrint(historico.slice(0, 2))
+      } catch {
+        setUltimosAtendimentosPrint([])
+      }
+    } else {
+      setUltimosAtendimentosPrint([])
+    }
+    setIsPrintDialogOpen(true)
+  }
+
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'aberta':
@@ -469,17 +497,28 @@ export default function OrdensServico() {
                     </td>
                     <td className="py-3.5 px-4">{getStatusBadge(os.status)}</td>
                     <td className="py-3.5 px-4 text-right">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          navigate(`/ordens-de-servico/${os.id}`)
-                        }}
-                        className="text-xs text-blue-600 hover:text-blue-800 font-medium"
-                      >
-                        Abrir
-                      </Button>
+                      <div className="flex items-center justify-end gap-1">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={(e) => handleImprimirOsDaLista(os, e)}
+                          className="text-xs text-gray-700 hover:text-blue-600 hover:bg-blue-50 h-8"
+                          title="Imprimir O.S."
+                        >
+                          Imprimir
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            navigate(`/ordens-de-servico/${os.id}`)
+                          }}
+                          className="text-xs text-blue-600 hover:text-blue-800 font-medium h-8"
+                        >
+                          Abrir
+                        </Button>
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -655,6 +694,15 @@ export default function OrdensServico() {
           </form>
         </DialogContent>
       </Dialog>
+
+      {/* Diálogo de Impressão da O.S. Selecionada na Lista */}
+      <OrdemServicoPrintDialog
+        open={isPrintDialogOpen}
+        onOpenChange={setIsPrintDialogOpen}
+        ordem={osParaImprimir}
+        configEmpresa={configEmpresa}
+        ultimosAtendimentos={ultimosAtendimentosPrint}
+      />
     </div>
   )
 }
