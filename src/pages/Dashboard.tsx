@@ -35,11 +35,6 @@ export default function Dashboard() {
   const { user } = useAuth()
   const navigate = useNavigate()
 
-  // Se o usuário logado tem perfil 'cliente', renderiza o Portal do Cliente Aprimorado
-  if (user?.role === 'cliente') {
-    return <PortalCliente />
-  }
-
   const [isLoading, setIsLoading] = useState(true)
   const [activeClientsCount, setActiveClientsCount] = useState(0)
   const [rentedEquipmentsCount, setRentedEquipmentsCount] = useState(0)
@@ -296,6 +291,11 @@ export default function Dashboard() {
   useRealtime('grafica_vendas', () => loadDashboardData())
   useRealtime('grafica_caixas', () => loadDashboardData())
   useRealtime('suprimentos', () => loadDashboardData())
+
+  // Se o usuário logado tem perfil 'cliente', renderiza o Portal do Cliente Aprimorado
+  if (user?.role === 'cliente') {
+    return <PortalCliente />
+  }
 
   // Max valor do gráfico para escala
   const maxRevenue = Math.max(...monthlyRevenueData.map((d) => d.value), 2000)

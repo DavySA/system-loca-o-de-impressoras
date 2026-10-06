@@ -1,4 +1,4 @@
-// Impede alterações nos contadores de um caixa que já foi fechado
+// Impede alterações nos contadores e dados de um caixa que já foi fechado
 onRecordUpdate((e) => {
   const originalStatus = e.record.original().getString('status')
   if (originalStatus === 'fechado') {
@@ -9,7 +9,7 @@ onRecordUpdate((e) => {
   e.next()
 }, 'grafica_caixas')
 
-// Impede exclusão de registros caso o usuário autenticado seja operador
+// Impede exclusão de registros de caixas caso o usuário autenticado seja operador
 onRecordDelete((e) => {
   const authRecord = e.auth
   if (authRecord && authRecord.getString('role') === 'operador') {
@@ -18,4 +18,4 @@ onRecordDelete((e) => {
     )
   }
   e.next()
-})
+}, 'grafica_caixas')
