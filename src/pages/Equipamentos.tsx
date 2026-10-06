@@ -62,6 +62,7 @@ export default function Equipamentos() {
     marca: '',
     modelo: '',
     numero_serie: '',
+    numero_patrimonio: '',
     contador_monocromatico: 0,
     contador_colorido: 0,
     data_aquisicao: '',
@@ -123,6 +124,7 @@ export default function Equipamentos() {
       marca: '',
       modelo: '',
       numero_serie: '',
+      numero_patrimonio: '',
       contador_monocromatico: 0,
       contador_colorido: 0,
       data_aquisicao: new Date().toISOString().split('T')[0],
@@ -139,6 +141,7 @@ export default function Equipamentos() {
       marca: eq.marca,
       modelo: eq.modelo,
       numero_serie: eq.numero_serie,
+      numero_patrimonio: eq.numero_patrimonio || '',
       contador_monocromatico: eq.contador_monocromatico || 0,
       contador_colorido: eq.contador_colorido || 0,
       data_aquisicao: eq.data_aquisicao ? eq.data_aquisicao.split('T')[0] : '',
@@ -281,7 +284,8 @@ export default function Equipamentos() {
     const matchesSearch =
       eq.modelo.toLowerCase().includes(q) ||
       eq.marca.toLowerCase().includes(q) ||
-      eq.numero_serie.toLowerCase().includes(q)
+      eq.numero_serie.toLowerCase().includes(q) ||
+      (eq.numero_patrimonio && eq.numero_patrimonio.toLowerCase().includes(q))
 
     const matchesMarca = selectedMarca === 'todas' || eq.marca === selectedMarca
     const matchesStatus = selectedStatus === 'todos' || eq.status === selectedStatus
@@ -343,7 +347,7 @@ export default function Equipamentos() {
           <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
           <Input
             type="text"
-            placeholder="Buscar por modelo, marca ou número de série..."
+            placeholder="Buscar por modelo, marca, número de série ou patrimônio..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="pl-9 h-10 text-sm border-gray-200"
@@ -422,11 +426,19 @@ export default function Equipamentos() {
 
                   {/* Card Body */}
                   <div className="p-4 space-y-3 text-xs">
-                    <div>
-                      <span className="text-gray-400 block font-medium">Nº de Série:</span>
-                      <span className="font-mono text-gray-800 font-semibold">
-                        {eq.numero_serie}
-                      </span>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <span className="text-gray-400 block font-medium">Nº de Série:</span>
+                        <span className="font-mono text-gray-800 font-semibold truncate block">
+                          {eq.numero_serie}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-gray-400 block font-medium">Patrimônio:</span>
+                        <span className="font-mono text-blue-700 font-semibold truncate block">
+                          {eq.numero_patrimonio || '-'}
+                        </span>
+                      </div>
                     </div>
 
                     <div className="p-2.5 rounded-lg bg-gray-50 border border-gray-100 flex items-center gap-2">
@@ -558,7 +570,7 @@ export default function Equipamentos() {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div className="space-y-1.5">
                 <Label htmlFor="serie">
                   Número de Série <span className="text-red-500">*</span>
@@ -573,6 +585,16 @@ export default function Equipamentos() {
                 {fieldErrors.numero_serie && (
                   <p className="text-xs text-red-600">{fieldErrors.numero_serie}</p>
                 )}
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="patrimonio">Número de Patrimônio</Label>
+                <Input
+                  id="patrimonio"
+                  value={formData.numero_patrimonio}
+                  onChange={(e) => setFormData({ ...formData, numero_patrimonio: e.target.value })}
+                  placeholder="Ex.: PAT-00123"
+                />
               </div>
 
               <div className="space-y-1.5">

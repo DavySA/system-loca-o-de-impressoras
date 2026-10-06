@@ -3,8 +3,12 @@ import { Navigate, Outlet, useLocation } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
 import Layout from '@/components/Layout'
 
-export const ProtectedRoute: React.FC = () => {
-  const { isAuthenticated, isLoading } = useAuth()
+interface ProtectedRouteProps {
+  allowedRoles?: ('administrador' | 'tecnico' | 'cliente')[]
+}
+
+export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ allowedRoles }) => {
+  const { isAuthenticated, isLoading, user } = useAuth()
   const location = useLocation()
 
   if (isLoading) {
@@ -18,6 +22,18 @@ export const ProtectedRoute: React.FC = () => {
 
   if (!isAuthenticated) {
     return <Navigate to="/login" state={{ from: location }} replace />
+  }
+
+  const role = user?.role || 'administrador'
+  if (allowedRoles && !allowedRoles.includes(role)) {
+    // Redirecionar usuário com base no papel permitido
+    if (role === 'tecnico') {
+      return <Navigate to="/ordens-de-servico" replace />
+    }
+    if (role === 'cliente') {
+      return <Navigate to="/faturamento" replace />
+    }
+    return <Navigate to="/dashboard" replace />
   }
 
   return (

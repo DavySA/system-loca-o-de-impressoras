@@ -30,10 +30,16 @@ export default function Layout({ children }: LayoutProps) {
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false)
   const [openOsCount, setOpenOsCount] = useState<number>(0)
 
+  const role = user?.role || 'administrador'
+
   // Carregar contagem de ordens de serviço abertas
   const loadOpenOsCount = async () => {
     try {
-      const list = await ordensServicoService.getAll('status != "concluida"')
+      let filter = 'status != "concluida"'
+      if (role === 'cliente' && user?.cliente_id) {
+        filter += ` && cliente_id = "${user.cliente_id}"`
+      }
+      const list = await ordensServicoService.getAll(filter)
       setOpenOsCount(list.length)
     } catch (e) {
       console.error(e)
@@ -55,18 +61,26 @@ export default function Layout({ children }: LayoutProps) {
   }, [location.pathname])
 
   const navItems = [
-    { label: 'Dashboard', path: '/dashboard', icon: LayoutGrid },
-    { label: 'Clientes', path: '/clientes', icon: Users },
-    { label: 'Equipamentos', path: '/equipamentos', icon: Printer },
+    { label: 'Dashboard', path: '/dashboard', icon: LayoutGrid, roles: ['administrador'] },
+    { label: 'Clientes', path: '/clientes', icon: Users, roles: ['administrador'] },
+    { label: 'Equipamentos', path: '/equipamentos', icon: Printer, roles: ['administrador'] },
     {
       label: 'Ordens de Serviço',
       path: '/ordens-de-servico',
       icon: ClipboardList,
       badge: openOsCount,
+      roles: ['administrador', 'tecnico', 'cliente'],
     },
-    { label: 'Faturamento', path: '/faturamento', icon: Receipt },
-    { label: 'Serviços', path: '/servicos', icon: Wrench },
-  ]
+    {
+      label: 'Faturamento',
+      path: '/faturamento',
+      icon: Receipt,
+      roles: ['administrador', 'cliente'],
+    },
+    { label: 'Serviços', path: '/servicos', icon: Wrench, roles: ['administrador'] },
+    { label: 'Usuários', path: '/usuarios', icon: Users, roles: ['administrador'] },
+    { label: 'Personalizar', path: '/personalizar', icon: Wrench, roles: ['administrador'] },
+  ].filter((item) => item.roles.includes(role))
 
   // Obter título da página atual
   const getPageTitle = () => {
@@ -80,6 +94,8 @@ export default function Layout({ children }: LayoutProps) {
     if (path.startsWith('/ordens-de-servico')) return 'Ordens de Serviço'
     if (path.startsWith('/faturamento')) return 'Faturamento & Leituras'
     if (path.startsWith('/servicos')) return 'Catálogo de Serviços'
+    if (path.startsWith('/usuarios')) return 'Gerenciamento de Usuários'
+    if (path.startsWith('/personalizar')) return 'Personalizar Empresa & Cabeçalho'
     return 'PrintGest'
   }
 
@@ -196,11 +212,16 @@ export default function Layout({ children }: LayoutProps) {
               </AvatarFallback>
             </Avatar>
             <div className="flex-1 min-w-0 md:hidden lg:block">
-              <p className="text-xs font-semibold text-white truncate leading-tight">
-                {user?.name || 'Administrador'}
-              </p>
+              <div className="flex items-center gap-1.5">
+                <p className="text-xs font-semibold text-white truncate leading-tight">
+                  {user?.name || 'Usuário'}
+                </p>
+                <span className="text-[10px] uppercase font-bold px-1.5 py-0.2 rounded bg-blue-500/20 text-blue-300 border border-blue-400/30">
+                  {role}
+                </span>
+              </div>
               <p className="text-[11px] text-gray-400 truncate">
-                {user?.email || 'admin@printgest.com'}
+                {user?.email || 'usuario@printgest.com'}
               </p>
             </div>
             <button

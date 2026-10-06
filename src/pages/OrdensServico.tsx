@@ -15,6 +15,7 @@ import {
 } from 'lucide-react'
 import { ordensServicoService } from '@/services/ordensServico'
 import { clientesService } from '@/services/clientes'
+import { faturasService } from '@/services/faturas'
 import { equipamentosService } from '@/services/equipamentos'
 import { servicosService } from '@/services/servicos'
 import { contratosService } from '@/services/contratos'
@@ -49,6 +50,9 @@ export default function OrdensServico() {
   const { user } = useAuth()
   const { toast } = useToast()
 
+  const isClienteUser = user?.role === 'cliente'
+  const clienteIdVinculado = user?.cliente_id
+
   const [ordens, setOrdens] = useState<OrdemServico[]>([])
   const [clientes, setClientes] = useState<Cliente[]>([])
   const [equipamentos, setEquipamentos] = useState<Equipamento[]>([])
@@ -80,8 +84,13 @@ export default function OrdensServico() {
   const loadData = async () => {
     try {
       setIsLoading(true)
+      let osFilter = ''
+      if (isClienteUser && clienteIdVinculado) {
+        osFilter = `cliente_id = "${clienteIdVinculado}"`
+      }
+
       const [osList, clList, eqList, svList] = await Promise.all([
-        ordensServicoService.getAll(),
+        ordensServicoService.getAll(osFilter),
         clientesService.getAll('status = "ativo"'),
         equipamentosService.getAll(),
         servicosService.getAll(),
@@ -144,9 +153,28 @@ export default function OrdensServico() {
     })
   }, [formData.cliente_id, equipamentos])
 
-  const handleOpenCreate = () => {
+  const handleOpenCreate = async () => {
+    // Se o usuário for cliente, verificar antes se está inadimplente
+    if (isClienteUser && clienteIdVinculado) {
+      try {
+        const fatVencidas = await faturasService.getByCliente(clienteIdVinculado)
+        const temInadimplencia = fatVencidas.some((f) => f.status === 'vencida')
+        if (temInadimplencia) {
+          toast({
+            variant: 'destructive',
+            title: 'Abertura bloqueada por inadimplência',
+            description:
+              'Constam faturas vencidas em aberto para o seu cadastro. Regularize o faturamento para abrir novos chamados técnicos.',
+          })
+          return
+        }
+      } catch (e) {
+        console.warn('Erro ao verificar faturas:', e)
+      }
+    }
+
     setFormData({
-      cliente_id: clientes[0]?.id || '',
+      cliente_id: isClienteUser && clienteIdVinculado ? clienteIdVinculado : clientes[0]?.id || '',
       equipamento_id: '',
       servico_id: servicos[0]?.id || '',
       prioridade: 'media',
@@ -173,6 +201,38 @@ export default function OrdensServico() {
     if (Object.keys(errors).length > 0) {
       setFieldErrors(errors)
       return
+    }
+
+    // Validação preventiva no frontend: checar se já existe O.S. não concluída para o equipamento
+    const osAbertaMesmoEquip = ordens.find(
+      (os) => os.equipamento_id === formData.equipamento_id && os.status !== 'concluida',
+    )
+    if (osAbertaMesmoEquip) {
+      toast({
+        variant: 'destructive',
+        title: 'Equipamento com O.S. em andamento',
+        description: `Não é possível abrir nova O.S.: a ordem ${formatOSCode(
+          osAbertaMesmoEquip.id,
+        )} ainda não foi concluída para este equipamento.`,
+      })
+      return
+    }
+
+    // Se usuário for cliente, validar inadimplência novamente
+    if (isClienteUser && clienteIdVinculado) {
+      try {
+        const faturas = await faturasService.getByCliente(clienteIdVinculado)
+        if (faturas.some((f) => f.status === 'vencida')) {
+          toast({
+            variant: 'destructive',
+            title: 'Abertura bloqueada por pendência financeira',
+            description: 'Regularize as faturas em atraso para poder solicitar chamados.',
+          })
+          return
+        }
+      } catch {
+        /* intentionally ignored */
+      }
     }
 
     setIsSubmitting(true)
@@ -206,8 +266,8 @@ export default function OrdensServico() {
       } else {
         toast({
           variant: 'destructive',
-          title: 'Erro ao abrir O.S.',
-          description: 'Verifique as informações preenchidas.',
+          title: 'Não foi possível abrir a O.S.',
+          description: (err as any)?.message || 'Verifique as informações preenchidas.',
         })
       }
     } finally {

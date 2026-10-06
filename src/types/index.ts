@@ -1,3 +1,5 @@
+export type UserRole = 'administrador' | 'tecnico' | 'cliente'
+
 export interface Cliente {
   id: string
   nome_razao_social: string
@@ -18,6 +20,7 @@ export interface Equipamento {
   marca: string
   modelo: string
   numero_serie: string
+  numero_patrimonio?: string
   contador_monocromatico: number
   contador_colorido: number
   data_aquisicao?: string
@@ -33,6 +36,11 @@ export interface Contrato {
   id: string
   cliente_id: string
   equipamento_id: string
+  numero_contrato?: string
+  duracao_meses?: number
+  modalidade?: 'com_franquia' | 'apenas_excedentes'
+  valor_scanner?: number
+  outros_servicos?: string
   data_inicio: string
   data_fim?: string
   valor_mensal: number
@@ -74,6 +82,9 @@ export interface OrdemServico {
   data_abertura?: string
   data_conclusao?: string
   tecnico_responsavel?: string
+  contador_atual?: number
+  assinatura_desenho?: string
+  parecer_tecnico?: string
   status: 'aberta' | 'em_andamento' | 'aguardando_peca' | 'concluida'
   created: string
   updated: string
@@ -106,6 +117,13 @@ export interface Fatura {
   valor_excedente: number
   valor_total: number
   status: 'gerada' | 'paga' | 'vencida' | 'cancelada'
+  leitura_anterior_mono?: number
+  leitura_atual_mono?: number
+  leitura_anterior_color?: number
+  leitura_atual_color?: number
+  desconto?: number
+  acrescimo_servicos?: number
+  observacoes?: string
   created: string
   updated: string
   expand?: {
@@ -119,4 +137,27 @@ export interface AppUser {
   email: string
   name?: string
   avatar?: string
+  role?: UserRole
+  cliente_id?: string
+  expand?: {
+    cliente_id?: Cliente
+  }
+}
+
+export interface ConfiguracoesEmpresa {
+  id: string
+  razao_social: string
+  nome_fantasia?: string
+  cnpj?: string
+  inscricao_estadual?: string
+  endereco?: string
+  cidade?: string
+  uf?: string
+  telefone?: string
+  email?: string
+  website?: string
+  logo?: string
+  mensagem_rodape?: string
+  created: string
+  updated: string
 }

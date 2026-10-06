@@ -26,6 +26,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         email: pb.authStore.record.email,
         name: pb.authStore.record.name || 'Usuário',
         avatar: pb.authStore.record.avatar,
+        role: pb.authStore.record.role || 'administrador',
+        cliente_id: pb.authStore.record.cliente_id || undefined,
       })
     } else {
       setUser(null)
@@ -40,6 +42,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           email: record.email,
           name: record.name || 'Usuário',
           avatar: record.avatar,
+          role: record.role || 'administrador',
+          cliente_id: record.cliente_id || undefined,
         })
       } else {
         setUser(null)
@@ -59,6 +63,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         email: authData.record.email,
         name: authData.record.name || 'Usuário',
         avatar: authData.record.avatar,
+        role: authData.record.role || 'administrador',
+        cliente_id: authData.record.cliente_id || undefined,
       })
     }
   }

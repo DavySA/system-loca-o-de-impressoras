@@ -15,15 +15,19 @@ import {
   ExternalLink,
 } from 'lucide-react'
 import { ordensServicoService } from '@/services/ordensServico'
+import { configuracoesService } from '@/services/configuracoes'
 import { formatOSCode, formatDate, formatDateTime } from '@/lib/formatters'
 import { useAuth } from '@/context/AuthContext'
 import { useToast } from '@/hooks/use-toast'
 import { useRealtime } from '@/hooks/use-realtime'
+import { SignaturePad } from '@/components/SignaturePad'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
+import { Printer as PrintIcon, Wrench } from 'lucide-react'
 import {
   Select,
   SelectContent,
@@ -38,7 +42,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from '@/components/ui/dialog'
-import type { OrdemServico, AtualizacaoOS } from '@/types'
+import type { OrdemServico, AtualizacaoOS, ConfiguracoesEmpresa } from '@/types'
 
 export default function OrdemServicoDetalhe() {
   const { id } = useParams<{ id: string }>()
@@ -48,7 +52,15 @@ export default function OrdemServicoDetalhe() {
 
   const [ordem, setOrdem] = useState<OrdemServico | null>(null)
   const [atualizacoes, setAtualizacoes] = useState<AtualizacaoOS[]>([])
+  const [ultimosAtendimentos, setUltimosAtendimentos] = useState<OrdemServico[]>([])
+  const [configEmpresa, setConfigEmpresa] = useState<ConfiguracoesEmpresa | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+
+  // Dados Técnicos da OS: Contador atual e Parecer Técnico
+  const [contadorAtual, setContadorAtual] = useState<number>(0)
+  const [parecerTecnico, setParecerTecnico] = useState<string>('')
+  const [assinaturaDataUrl, setAssinaturaDataUrl] = useState<string>('')
+  const [isSavingDadosTecnicos, setIsSavingDadosTecnicos] = useState(false)
 
   // Formulário nova atualização
   const [novoComentario, setNovoComentario] = useState('')
@@ -65,13 +77,33 @@ export default function OrdemServicoDetalhe() {
     if (!id) return
     try {
       setIsLoading(true)
-      const [os, atList] = await Promise.all([
+      const [os, atList, cfg] = await Promise.all([
         ordensServicoService.getById(id),
         ordensServicoService.getAtualizacoes(id),
+        configuracoesService.get(),
       ])
       setOrdem(os)
       setAtualizacoes(atList)
+      setConfigEmpresa(cfg)
       setNovoStatus(os.status)
+      setContadorAtual(
+        os.contador_atual ||
+          (os.expand?.equipamento_id?.contador_monocromatico || 0) +
+            (os.expand?.equipamento_id?.contador_colorido || 0),
+      )
+      setParecerTecnico(os.parecer_tecnico || '')
+      setAssinaturaDataUrl(os.assinatura_desenho || '')
+
+      if (os.equipamento_id) {
+        try {
+          const historico = await ordensServicoService.getAll(
+            `equipamento_id = "${os.equipamento_id}" && id != "${os.id}"`,
+          )
+          setUltimosAtendimentos(historico.slice(0, 2))
+        } catch {
+          /* intentionally ignored */
+        }
+      }
     } catch (e) {
       toast({
         variant: 'destructive',
@@ -120,9 +152,44 @@ export default function OrdemServicoDetalhe() {
     }
   }
 
+  const handleSalvarDadosTecnicos = async () => {
+    if (!id) return
+    setIsSavingDadosTecnicos(true)
+    try {
+      await ordensServicoService.update(id, {
+        contador_atual: Number(contadorAtual),
+        parecer_tecnico: parecerTecnico,
+        assinatura_desenho: assinaturaDataUrl,
+      })
+      toast({
+        title: 'Dados da O.S. salvos com sucesso',
+        description: 'Contador, parecer técnico e assinatura atualizados.',
+      })
+      loadData()
+    } catch (err: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Erro ao salvar dados',
+        description: err.message || 'Tente novamente.',
+      })
+    } finally {
+      setIsSavingDadosTecnicos(false)
+    }
+  }
+
+  const handlePrint = () => {
+    window.print()
+  }
+
   const handleConfirmarConclusao = async () => {
     if (!id) return
     try {
+      // Salvar também parecer_tecnico e contador se informados
+      await ordensServicoService.update(id, {
+        contador_atual: Number(contadorAtual),
+        parecer_tecnico: parecerTecnico || concluirComentario,
+        assinatura_desenho: assinaturaDataUrl,
+      })
       await ordensServicoService.marcarConcluida(
         id,
         user?.name || 'Administrador',
@@ -130,7 +197,7 @@ export default function OrdemServicoDetalhe() {
       )
       toast({
         title: 'Ordem de Serviço concluída!',
-        description: 'Status alterado para Concluída e data de término registrada.',
+        description: 'Status alterado para Concluída e dados arquivados.',
       })
       setConcluirModalOpen(false)
       loadData()
@@ -227,9 +294,17 @@ export default function OrdemServicoDetalhe() {
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
-          {/* Botão Marcar como Concluída visível quando status for em_andamento ou aguardando_peca */}
-          {(ordem.status === 'em_andamento' || ordem.status === 'aguardando_peca') && (
+        <div className="flex items-center gap-2 print:hidden">
+          <Button
+            variant="outline"
+            onClick={handlePrint}
+            className="flex items-center gap-1.5 border-gray-300 text-gray-700 hover:bg-gray-50"
+          >
+            <PrintIcon className="w-4 h-4 text-blue-600" /> Imprimir O.S.
+          </Button>
+
+          {/* Botão Marcar como Concluída visível quando status for diferente de concluída */}
+          {ordem.status !== 'concluida' && (
             <Button
               onClick={() => setConcluirModalOpen(true)}
               className="bg-emerald-600 hover:bg-emerald-700 text-white flex items-center gap-1.5 shadow-xs"
@@ -237,6 +312,52 @@ export default function OrdemServicoDetalhe() {
               <CheckCircle2 className="w-4 h-4" /> Marcar como Concluída
             </Button>
           )}
+        </div>
+      </div>
+
+      {/* CABEÇALHO DE IMPRESSÃO (Visível apenas na impressão ou estilizado) */}
+      <div className="hidden print:block border-b-2 border-gray-800 pb-4 mb-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            {configEmpresa?.logo && (
+              <img
+                src={configuracoesService.getLogoUrl(configEmpresa) || ''}
+                alt="Logo Empresa"
+                className="h-16 w-auto object-contain max-w-[180px]"
+              />
+            )}
+            <div>
+              <h2 className="text-xl font-bold uppercase text-gray-900">
+                {configEmpresa?.razao_social || 'PrintGest Locações'}
+              </h2>
+              {configEmpresa?.nome_fantasia && (
+                <p className="text-xs text-gray-600">{configEmpresa.nome_fantasia}</p>
+              )}
+              <p className="text-xs text-gray-500">
+                CNPJ: {configEmpresa?.cnpj || '-'}
+                {configEmpresa?.inscricao_estadual
+                  ? ` • IE: ${configEmpresa.inscricao_estadual}`
+                  : ''}
+              </p>
+              <p className="text-xs text-gray-500">
+                {configEmpresa?.endereco || ''} • Tel: {configEmpresa?.telefone || '-'} • E-mail:{' '}
+                {configEmpresa?.email || '-'}
+              </p>
+            </div>
+          </div>
+          <div className="text-right">
+            <div className="border-2 border-gray-900 px-4 py-2 text-center rounded">
+              <span className="block text-[10px] uppercase font-bold text-gray-600">
+                Comprovante de Atendimento
+              </span>
+              <span className="text-xl font-mono font-bold text-gray-900">
+                {formatOSCode(ordem.id)}
+              </span>
+            </div>
+            <span className="text-[11px] text-gray-500 block mt-1">
+              Data: {formatDate(ordem.data_abertura || ordem.created)}
+            </span>
+          </div>
         </div>
       </div>
 
@@ -325,6 +446,173 @@ export default function OrdemServicoDetalhe() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Parecer Técnico e Contador Atual */}
+      <Card className="border border-gray-200 shadow-xs">
+        <CardHeader className="pb-3 flex flex-row items-center justify-between">
+          <div>
+            <CardTitle className="text-base font-semibold text-gray-900 flex items-center gap-2">
+              <Wrench className="w-5 h-5 text-blue-600" /> Parecer Técnico & Leitura do Contador
+            </CardTitle>
+            <p className="text-xs text-gray-500 mt-0.5">
+              Informe a leitura atual do contador e o diagnóstico técnico do atendimento
+            </p>
+          </div>
+          <Button
+            size="sm"
+            onClick={handleSalvarDadosTecnicos}
+            disabled={isSavingDadosTecnicos}
+            className="bg-blue-600 hover:bg-blue-700 text-white text-xs print:hidden"
+          >
+            {isSavingDadosTecnicos ? 'Salvando...' : 'Salvar Dados'}
+          </Button>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="contador-os" className="text-xs font-semibold text-gray-700">
+                Contador Atual da Impressora:
+              </Label>
+              <Input
+                id="contador-os"
+                type="number"
+                min={0}
+                value={contadorAtual}
+                onChange={(e) => setContadorAtual(Number(e.target.value))}
+                className="font-mono text-base font-bold text-gray-900"
+                placeholder="Ex: 45200"
+              />
+              <span className="text-[11px] text-gray-400">
+                Contador anterior:{' '}
+                {(
+                  (equipamento?.contador_monocromatico || 0) + (equipamento?.contador_colorido || 0)
+                ).toLocaleString('pt-BR')}
+              </span>
+            </div>
+
+            <div className="sm:col-span-2 space-y-1.5">
+              <Label htmlFor="parecer-tec" className="text-xs font-semibold text-gray-700">
+                Parecer Técnico / Solução Aplicada:
+              </Label>
+              <Textarea
+                id="parecer-tec"
+                rows={2}
+                value={parecerTecnico}
+                onChange={(e) => setParecerTecnico(e.target.value)}
+                placeholder="Ex: Troca do rolete de tração realizada, limpeza da unidade óptica e testes de impressão 100% aprovados."
+                className="text-xs sm:text-sm"
+              />
+            </div>
+          </div>
+
+          {/* Assinatura no display */}
+          <div className="pt-3 border-t border-gray-100">
+            <Label className="text-xs font-semibold text-gray-700 block mb-2">
+              Assinatura do Cliente / Recebedor do Serviço:
+            </Label>
+            <div className="max-w-md">
+              <SignaturePad
+                initialDataUrl={assinaturaDataUrl}
+                onSave={(dataUrl) => setAssinaturaDataUrl(dataUrl)}
+              />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Histórico: Dois Últimos Atendimentos deste Equipamento */}
+      <Card className="border border-gray-200 shadow-xs">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base font-semibold text-gray-900 flex items-center gap-2">
+            <Clock className="w-5 h-5 text-indigo-600" /> Últimos 2 Atendimentos Deste Equipamento
+          </CardTitle>
+          <p className="text-xs text-gray-500 mt-0.5">
+            Histórico prévio com pareceres técnicos e contadores registrados anteriormente
+          </p>
+        </CardHeader>
+        <CardContent>
+          {ultimosAtendimentos.length === 0 ? (
+            <p className="text-xs text-gray-500 py-3 italic">
+              Nenhum atendimento anterior encontrado para este equipamento.
+            </p>
+          ) : (
+            <div className="space-y-3">
+              {ultimosAtendimentos.map((ant, idx) => (
+                <div
+                  key={ant.id}
+                  className="p-3 rounded-lg border border-gray-200 bg-gray-50/70 text-xs space-y-1.5"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-blue-700 font-mono">
+                      Atendimento #{idx + 1}: {formatOSCode(ant.id)}
+                    </span>
+                    <span className="text-gray-500">
+                      {formatDate(ant.data_conclusao || ant.data_abertura || ant.created)} •{' '}
+                      <strong>{ant.tecnico_responsavel || 'Técnico'}</strong>
+                    </span>
+                  </div>
+                  <div>
+                    <span className="font-semibold text-gray-700">Problema: </span>
+                    <span className="text-gray-600">{ant.descricao_problema}</span>
+                  </div>
+                  {ant.parecer_tecnico && (
+                    <div className="bg-white p-2 rounded border border-gray-200">
+                      <span className="font-semibold text-gray-800">Parecer Técnico: </span>
+                      <span className="text-gray-700">{ant.parecer_tecnico}</span>
+                    </div>
+                  )}
+                  <div className="flex items-center gap-4 text-[11px] text-gray-500 pt-1">
+                    <span>
+                      Contador registrado:{' '}
+                      <strong className="text-gray-800 font-mono">
+                        {ant.contador_atual
+                          ? ant.contador_atual.toLocaleString('pt-BR')
+                          : 'Não informado'}
+                      </strong>
+                    </span>
+                    <span>
+                      Status: <strong className="capitalize">{ant.status}</strong>
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* ÁREA DE ASSINATURA PARA IMPRESSÃO (Folha de Papel) */}
+      <div className="hidden print:block mt-8 pt-8 border-t border-gray-400">
+        <div className="grid grid-cols-2 gap-12 text-center text-xs">
+          <div>
+            {assinaturaDataUrl ? (
+              <img
+                src={assinaturaDataUrl}
+                alt="Assinatura Digital"
+                className="h-16 mx-auto object-contain mb-1"
+              />
+            ) : (
+              <div className="h-16 border-b border-gray-800 mb-1" />
+            )}
+            <p className="font-semibold text-gray-900">{cliente?.nome_razao_social || 'Cliente'}</p>
+            <p className="text-[11px] text-gray-500">Assinatura do Responsável / Recebedor</p>
+          </div>
+
+          <div>
+            <div className="h-16 border-b border-gray-800 mb-1" />
+            <p className="font-semibold text-gray-900">
+              {ordem.tecnico_responsavel || 'Técnico Autorizado'}
+            </p>
+            <p className="text-[11px] text-gray-500">Técnico PrintGest Outsourcing</p>
+          </div>
+        </div>
+
+        {configEmpresa?.mensagem_rodape && (
+          <p className="text-center text-[10px] text-gray-400 mt-6 italic">
+            {configEmpresa.mensagem_rodape}
+          </p>
+        )}
+      </div>
 
       {/* Linha do Tempo de Atualizações */}
       <Card className="border border-gray-200 shadow-xs">

@@ -18,13 +18,17 @@ import { faturasService } from '@/services/faturas'
 import { clientesService } from '@/services/clientes'
 import { contratosService } from '@/services/contratos'
 import { formatCurrency, formatMonthYear, formatDate } from '@/lib/formatters'
+import { useAuth } from '@/context/AuthContext'
 import { useToast } from '@/hooks/use-toast'
 import { useRealtime } from '@/hooks/use-realtime'
+import { configuracoesService } from '@/services/configuracoes'
+import { equipamentosService } from '@/services/equipamentos'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent } from '@/components/ui/card'
+import { Textarea } from '@/components/ui/textarea'
 import {
   Dialog,
   DialogContent,
@@ -39,16 +43,21 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import type { Fatura, Cliente, Contrato } from '@/types'
+import type { Fatura, Cliente, Contrato, ConfiguracoesEmpresa, Equipamento } from '@/types'
 
 export default function Faturamento() {
-  const location = useLocation()
-  const navigate = useNavigate()
+  const { user } = useAuth()
   const { toast } = useToast()
+  const location = useLocation()
+
+  const isClienteUser = user?.role === 'cliente'
+  const clienteIdVinculado = user?.cliente_id
 
   const [faturas, setFaturas] = useState<Fatura[]>([])
   const [clientes, setClientes] = useState<Cliente[]>([])
   const [contratos, setContratos] = useState<Contrato[]>([])
+  const [equipamentos, setEquipamentos] = useState<Equipamento[]>([])
+  const [configEmpresa, setConfigEmpresa] = useState<ConfiguracoesEmpresa | null>(null)
   const [isLoading, setIsLoading] = useState(true)
 
   // KPIs
@@ -56,30 +65,46 @@ export default function Faturamento() {
   const [kpiPaginasExcedentes, setKpiPaginasExcedentes] = useState(0)
   const [kpiFaturasPendentes, setKpiFaturasPendentes] = useState(0)
 
-  // Modal Gerar Fatura
+  // Modal Gerar Fatura com Leitura de Contadores e Subtração Automática
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [selectedClienteId, setSelectedClienteId] = useState('')
   const [clienteContratos, setClienteContratos] = useState<Contrato[]>([])
   const [selectedContratoId, setSelectedContratoId] = useState('')
   const [mesReferencia, setMesReferencia] = useState('')
-  const [paginasConsumidas, setPaginasConsumidas] = useState<number>(0)
+
+  // Leituras por equipamento
+  const [leituraAnteriorMono, setLeituraAnteriorMono] = useState(0)
+  const [leituraAtualMono, setLeituraAtualMono] = useState(0)
+  const [leituraAnteriorColor, setLeituraAnteriorColor] = useState(0)
+  const [leituraAtualColor, setLeituraAtualColor] = useState(0)
+  const [descontoEquipamento, setDescontoEquipamento] = useState(0)
+  const [acrescimoServicos, setAcrescimoServicos] = useState(0)
+  const [observacoesFatura, setObservacoesFatura] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
 
-  // Modal Detalhes / Impressão de Fatura
+  // Modal Detalhes / Impressão
   const [selectedFatura, setSelectedFatura] = useState<Fatura | null>(null)
   const [isDetalhesOpen, setIsDetalhesOpen] = useState(false)
-
   const loadData = async () => {
     try {
       setIsLoading(true)
-      const [fatList, clList, contList] = await Promise.all([
-        faturasService.getAll(),
+      let fatFilter = ''
+      if (isClienteUser && clienteIdVinculado) {
+        fatFilter = `cliente_id = "${clienteIdVinculado}"`
+      }
+
+      const [fatList, clList, contList, eqList, cfg] = await Promise.all([
+        faturasService.getAll(fatFilter),
         clientesService.getAll('status = "ativo"'),
         contratosService.getAll('status = "ativo"'),
+        equipamentosService.getAll(),
+        configuracoesService.get(),
       ])
       setFaturas(fatList)
       setClientes(clList)
       setContratos(contList)
+      setEquipamentos(eqList)
+      setConfigEmpresa(cfg)
 
       // Calcular KPIs
       const now = new Date()
@@ -138,14 +163,38 @@ export default function Faturamento() {
     const conts = contratos.filter((c) => c.cliente_id === targetClientId)
     setClienteContratos(conts)
     if (conts.length > 0) {
-      setSelectedContratoId(conts[0].id)
-      setPaginasConsumidas(conts[0].paginas_contratadas_mensais || 0)
+      handleSelectContrato(conts[0], conts)
     } else {
       setSelectedContratoId('')
-      setPaginasConsumidas(0)
+      resetLeituras()
     }
 
     setIsModalOpen(true)
+  }
+
+  const resetLeituras = () => {
+    setLeituraAnteriorMono(0)
+    setLeituraAtualMono(0)
+    setLeituraAnteriorColor(0)
+    setLeituraAtualColor(0)
+    setDescontoEquipamento(0)
+    setAcrescimoServicos(0)
+    setObservacoesFatura('')
+  }
+
+  const handleSelectContrato = (ct: Contrato, currentConts?: Contrato[]) => {
+    setSelectedContratoId(ct.id)
+    // Obter equipamento vinculado para pegar os contadores anteriores
+    const eq = equipamentos.find((e) => e.id === ct.equipamento_id) || ct.expand?.equipamento_id
+    const prevMono = eq?.contador_monocromatico || 0
+    const prevColor = eq?.contador_colorido || 0
+
+    setLeituraAnteriorMono(prevMono)
+    setLeituraAtualMono(prevMono + (ct.paginas_contratadas_mensais || 0))
+    setLeituraAnteriorColor(prevColor)
+    setLeituraAtualColor(prevColor)
+    setDescontoEquipamento(0)
+    setAcrescimoServicos(0)
   }
 
   // Quando o cliente selecionado muda
@@ -154,25 +203,43 @@ export default function Faturamento() {
     const conts = contratos.filter((c) => c.cliente_id === cId)
     setClienteContratos(conts)
     if (conts.length > 0) {
-      setSelectedContratoId(conts[0].id)
-      setPaginasConsumidas(conts[0].paginas_contratadas_mensais || 0)
+      handleSelectContrato(conts[0], conts)
     } else {
       setSelectedContratoId('')
-      setPaginasConsumidas(0)
+      resetLeituras()
     }
   }
 
   // Contrato atualmente selecionado no modal
   const activeContrato = clienteContratos.find((c) => c.id === selectedContratoId)
+  const activeEquipamento =
+    equipamentos.find((e) => e.id === activeContrato?.equipamento_id) ||
+    activeContrato?.expand?.equipamento_id
+
+  // Subtração automática do atual pelo anterior:
+  const consumoMono = Math.max(0, leituraAtualMono - leituraAnteriorMono)
+  const consumoColor = Math.max(0, leituraAtualColor - leituraAnteriorColor)
+  const paginasConsumidas = consumoMono + consumoColor
 
   // Cálculos ao vivo da fatura
-  const paginasContratadas = activeContrato?.paginas_contratadas_mensais || 0
+  const isApenasExcedentes = activeContrato?.modalidade === 'apenas_excedentes'
+  const paginasContratadas = isApenasExcedentes
+    ? 0
+    : activeContrato?.paginas_contratadas_mensais || 0
   const valorBaseAluguel = activeContrato?.valor_mensal || 0
   const valorPorPaginaExcedente = activeContrato?.valor_pagina_excedente || 0
 
-  const paginasExcedentesCalculadas = Math.max(0, paginasConsumidas - paginasContratadas)
+  const paginasExcedentesCalculadas = isApenasExcedentes
+    ? paginasConsumidas
+    : Math.max(0, paginasConsumidas - paginasContratadas)
+
   const valorExcedenteCalculado = paginasExcedentesCalculadas * valorPorPaginaExcedente
-  const valorTotalCalculado = valorBaseAluguel + valorExcedenteCalculado
+  const valorScanner = activeContrato?.valor_scanner || 0
+
+  // Total geral a pagar com desconto e acréscimos por equipamento
+  const subtotal =
+    valorBaseAluguel + valorExcedenteCalculado + valorScanner + Number(acrescimoServicos)
+  const valorTotalCalculado = Math.max(0, subtotal - Number(descontoEquipamento))
 
   const handleGerarFatura = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -194,15 +261,34 @@ export default function Faturamento() {
         paginas_contratadas: paginasContratadas,
         paginas_consumidas: Number(paginasConsumidas),
         paginas_excedentes: paginasExcedentesCalculadas,
-        valor_base: valorBaseAluguel,
+        valor_base: valorBaseAluguel + valorScanner,
         valor_excedente: valorExcedenteCalculado,
         valor_total: valorTotalCalculado,
+        leitura_anterior_mono: Number(leituraAnteriorMono),
+        leitura_atual_mono: Number(leituraAtualMono),
+        leitura_anterior_color: Number(leituraAnteriorColor),
+        leitura_atual_color: Number(leituraAtualColor),
+        desconto: Number(descontoEquipamento),
+        acrescimo_servicos: Number(acrescimoServicos),
+        observacoes: observacoesFatura,
         status: 'gerada',
       })
 
+      // Atualizar contador do equipamento para as leituras mais recentes
+      if (activeEquipamento) {
+        try {
+          await equipamentosService.update(activeEquipamento.id, {
+            contador_monocromatico: Number(leituraAtualMono),
+            contador_colorido: Number(leituraAtualColor),
+          })
+        } catch (e) {
+          console.warn('Erro ao atualizar contador no equipamento:', e)
+        }
+      }
+
       toast({
         title: 'Fatura gerada com sucesso!',
-        description: `Fatura de ${formatCurrency(valorTotalCalculado)} gerada para o mês ${formatMonthYear(mesReferencia)}.`,
+        description: `Fatura de ${formatCurrency(valorTotalCalculado)} gerada e contador do equipamento atualizado.`,
       })
       setIsModalOpen(false)
       loadData()
@@ -276,12 +362,14 @@ export default function Faturamento() {
             Gestão de leituras de contadores, franquias contratadas e emissão de cobranças
           </p>
         </div>
-        <Button
-          onClick={() => handleOpenCreate()}
-          className="bg-blue-600 hover:bg-blue-700 text-white shadow-xs flex items-center gap-1.5"
-        >
-          <Plus className="w-4 h-4" /> Gerar Fatura
-        </Button>
+        {!isClienteUser && (
+          <Button
+            onClick={() => handleOpenCreate()}
+            className="bg-blue-600 hover:bg-blue-700 text-white shadow-xs flex items-center gap-1.5"
+          >
+            <Plus className="w-4 h-4" /> Gerar Fatura
+          </Button>
+        )}
       </div>
 
       {/* 3 Cards de KPI */}
@@ -474,51 +562,30 @@ export default function Faturamento() {
         </div>
       </div>
 
-      {/* Modal Gerar Fatura com Cálculo ao Vivo */}
+      {/* Modal Gerar Fatura com Cálculo ao Vivo e Leitura de Contadores */}
       <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
-        <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <Calculator className="w-5 h-5 text-blue-600" /> Gerar Fatura de Locação
+              <Calculator className="w-5 h-5 text-blue-600" /> Faturamento com Subtração Automática
+              de Leituras
             </DialogTitle>
           </DialogHeader>
 
           <form onSubmit={handleGerarFatura} className="space-y-4 pt-2">
-            <div className="space-y-1.5">
-              <Label htmlFor="fat-cli">Cliente</Label>
-              <Select value={selectedClienteId} onValueChange={handleClienteChange}>
-                <SelectTrigger id="fat-cli">
-                  <SelectValue placeholder="Selecione o cliente" />
-                </SelectTrigger>
-                <SelectContent>
-                  {clientes.map((c) => (
-                    <SelectItem key={c.id} value={c.id}>
-                      {c.nome_razao_social}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-1.5">
-                <Label htmlFor="fat-cont">Contrato Ativo</Label>
-                <Select value={selectedContratoId} onValueChange={setSelectedContratoId}>
-                  <SelectTrigger id="fat-cont">
-                    <SelectValue placeholder="Selecione o contrato" />
+                <Label htmlFor="fat-cli">Cliente</Label>
+                <Select value={selectedClienteId} onValueChange={handleClienteChange}>
+                  <SelectTrigger id="fat-cli">
+                    <SelectValue placeholder="Selecione o cliente" />
                   </SelectTrigger>
                   <SelectContent>
-                    {clienteContratos.length === 0 ? (
-                      <SelectItem value="none" disabled>
-                        Nenhum contrato ativo
+                    {clientes.map((c) => (
+                      <SelectItem key={c.id} value={c.id}>
+                        {c.nome_razao_social}
                       </SelectItem>
-                    ) : (
-                      clienteContratos.map((ct) => (
-                        <SelectItem key={ct.id} value={ct.id}>
-                          Contrato #{ct.id.slice(0, 6)} ({formatCurrency(ct.valor_mensal)}/mês)
-                        </SelectItem>
-                      ))
-                    )}
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -535,89 +602,262 @@ export default function Faturamento() {
               </div>
             </div>
 
-            {/* Leituras e Franquia */}
-            <div className="p-4 rounded-xl bg-gray-50 border border-gray-200 space-y-3">
-              <span className="text-xs font-semibold text-gray-700 uppercase block">
-                Leitura de Contadores e Parâmetros
-              </span>
-
-              <div className="grid grid-cols-2 gap-3 text-xs">
-                <div>
-                  <Label className="text-gray-500">Páginas Contratadas (Franquia)</Label>
-                  <Input
-                    readOnly
-                    disabled
-                    value={paginasContratadas.toLocaleString('pt-BR')}
-                    className="bg-gray-100 font-semibold"
-                  />
-                </div>
-
-                <div>
-                  <Label htmlFor="p-cons" className="text-gray-900 font-semibold">
-                    Páginas Consumidas (Leitura Atual) *
-                  </Label>
-                  <Input
-                    id="p-cons"
-                    type="number"
-                    min={0}
-                    value={paginasConsumidas}
-                    onChange={(e) => setPaginasConsumidas(parseInt(e.target.value, 10) || 0)}
-                    required
-                    className="bg-white border-blue-400 font-bold text-gray-900"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3 text-xs pt-1">
-                <div>
-                  <Label className="text-gray-500">Valor Base do Aluguel</Label>
-                  <Input
-                    readOnly
-                    disabled
-                    value={formatCurrency(valorBaseAluguel)}
-                    className="bg-gray-100 font-semibold"
-                  />
-                </div>
-                <div>
-                  <Label className="text-gray-500">Custo da Página Excedente</Label>
-                  <Input
-                    readOnly
-                    disabled
-                    value={formatCurrency(valorPorPaginaExcedente)}
-                    className="bg-gray-100 font-semibold"
-                  />
-                </div>
-              </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="fat-cont">Contrato / Equipamento</Label>
+              <Select
+                value={selectedContratoId}
+                onValueChange={(val) => {
+                  const ct = clienteContratos.find((c) => c.id === val)
+                  if (ct) handleSelectContrato(ct)
+                }}
+              >
+                <SelectTrigger id="fat-cont">
+                  <SelectValue placeholder="Selecione o contrato/equipamento" />
+                </SelectTrigger>
+                <SelectContent>
+                  {clienteContratos.length === 0 ? (
+                    <SelectItem value="none" disabled>
+                      Nenhum contrato ativo
+                    </SelectItem>
+                  ) : (
+                    clienteContratos.map((ct) => {
+                      const eq = equipamentos.find((e) => e.id === ct.equipamento_id)
+                      return (
+                        <SelectItem key={ct.id} value={ct.id}>
+                          {ct.numero_contrato || 'Contrato'} — {eq?.marca} {eq?.modelo} (Pat:{' '}
+                          {eq?.numero_patrimonio || 'S/Pat'})
+                        </SelectItem>
+                      )
+                    })
+                  )}
+                </SelectContent>
+              </Select>
             </div>
 
-            {/* Cálculo ao vivo */}
-            <div className="p-4 rounded-xl bg-blue-50 border border-blue-200 space-y-2 text-xs">
-              <div className="flex items-center justify-between text-blue-900">
-                <span>Páginas Excedentes Calculadas:</span>
-                <span className="font-bold text-sm">
-                  {paginasExcedentesCalculadas.toLocaleString('pt-BR')} págs
+            {/* SEÇÃO DE LEITURAS COM SUBTRAÇÃO AUTOMÁTICA */}
+            <div className="p-4 rounded-xl bg-gray-50 border border-gray-200 space-y-4">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-gray-800 uppercase tracking-wide">
+                  1. Apuração de Contadores por Equipamento
+                </span>
+                <span className="text-[11px] text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200 font-semibold">
+                  Subtração Automática: Atual − Anterior
                 </span>
               </div>
-              <div className="flex items-center justify-between text-blue-900">
-                <span>Valor Excedente:</span>
-                <span className="font-bold text-sm">{formatCurrency(valorExcedenteCalculado)}</span>
+
+              {/* Leituras Monocromático */}
+              <div className="p-3 bg-white rounded-lg border border-gray-200 space-y-2">
+                <span className="text-xs font-semibold text-gray-900 block">
+                  Contador Monocromático (P&B)
+                </span>
+                <div className="grid grid-cols-3 gap-3 text-xs items-center">
+                  <div>
+                    <Label className="text-gray-500 text-[11px]">Leitura Anterior</Label>
+                    <Input
+                      type="number"
+                      value={leituraAnteriorMono}
+                      onChange={(e) => setLeituraAnteriorMono(Number(e.target.value))}
+                      className="h-8 font-mono"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-blue-900 font-semibold text-[11px]">
+                      Leitura Atual Informada *
+                    </Label>
+                    <Input
+                      type="number"
+                      value={leituraAtualMono}
+                      onChange={(e) => setLeituraAtualMono(Number(e.target.value))}
+                      className="h-8 font-mono border-blue-400 font-bold"
+                      required
+                    />
+                  </div>
+                  <div className="bg-blue-50/70 p-2 rounded text-center border border-blue-100">
+                    <span className="text-[10px] text-blue-700 block uppercase font-medium">
+                      Consumo Mono
+                    </span>
+                    <span className="text-sm font-bold text-blue-900 font-mono">
+                      {consumoMono.toLocaleString('pt-BR')} págs
+                    </span>
+                  </div>
+                </div>
               </div>
-              <div className="pt-2 border-t border-blue-200 flex items-center justify-between text-blue-950 font-bold text-base">
-                <span>Valor Total da Fatura:</span>
-                <span className="text-lg text-blue-700">{formatCurrency(valorTotalCalculado)}</span>
+
+              {/* Leituras Colorido */}
+              <div className="p-3 bg-white rounded-lg border border-gray-200 space-y-2">
+                <span className="text-xs font-semibold text-gray-900 block">
+                  Contador Colorido (Color)
+                </span>
+                <div className="grid grid-cols-3 gap-3 text-xs items-center">
+                  <div>
+                    <Label className="text-gray-500 text-[11px]">Leitura Anterior</Label>
+                    <Input
+                      type="number"
+                      value={leituraAnteriorColor}
+                      onChange={(e) => setLeituraAnteriorColor(Number(e.target.value))}
+                      className="h-8 font-mono"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-blue-900 font-semibold text-[11px]">
+                      Leitura Atual Informada *
+                    </Label>
+                    <Input
+                      type="number"
+                      value={leituraAtualColor}
+                      onChange={(e) => setLeituraAtualColor(Number(e.target.value))}
+                      className="h-8 font-mono border-blue-400 font-bold"
+                      required
+                    />
+                  </div>
+                  <div className="bg-blue-50/70 p-2 rounded text-center border border-blue-100">
+                    <span className="text-[10px] text-blue-700 block uppercase font-medium">
+                      Consumo Color
+                    </span>
+                    <span className="text-sm font-bold text-blue-900 font-mono">
+                      {consumoColor.toLocaleString('pt-BR')} págs
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Total Consumido e Franquia */}
+              <div className="grid grid-cols-2 gap-3 text-xs pt-1">
+                <div className="p-2.5 rounded-lg bg-gray-100 border border-gray-200">
+                  <span className="text-[10px] text-gray-500 block uppercase font-medium">
+                    Total Consumido no Período
+                  </span>
+                  <p className="text-base font-bold text-gray-900">
+                    {paginasConsumidas.toLocaleString('pt-BR')} págs
+                  </p>
+                </div>
+
+                <div className="p-2.5 rounded-lg bg-gray-100 border border-gray-200">
+                  <span className="text-[10px] text-gray-500 block uppercase font-medium">
+                    Franquia Contratada
+                  </span>
+                  <p className="text-base font-bold text-gray-900">
+                    {isApenasExcedentes
+                      ? 'Sem franquia'
+                      : `${paginasContratadas.toLocaleString('pt-BR')} págs`}
+                  </p>
+                </div>
               </div>
             </div>
 
-            <DialogFooter className="pt-4 gap-2">
+            {/* DESCONTOS E ACRÉSCIMOS POR EQUIPAMENTO */}
+            <div className="p-4 rounded-xl bg-gray-50 border border-gray-200 space-y-3">
+              <span className="text-xs font-bold text-gray-800 uppercase tracking-wide block">
+                2. Ajustes Financeiros por Equipamento
+              </span>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                <div>
+                  <Label htmlFor="fat-desc" className="text-red-700 font-semibold">
+                    Desconto no Equipamento (R$)
+                  </Label>
+                  <Input
+                    id="fat-desc"
+                    type="number"
+                    step="0.01"
+                    min={0}
+                    value={descontoEquipamento}
+                    onChange={(e) => setDescontoEquipamento(Number(e.target.value))}
+                    placeholder="0,00"
+                    className="h-9"
+                  />
+                  <span className="text-[10px] text-gray-400">
+                    Abatimentos, horas paradas ou bonificação
+                  </span>
+                </div>
+
+                <div>
+                  <Label htmlFor="fat-acresc" className="text-emerald-700 font-semibold">
+                    Serviço a Acrescentar (R$)
+                  </Label>
+                  <Input
+                    id="fat-acresc"
+                    type="number"
+                    step="0.01"
+                    min={0}
+                    value={acrescimoServicos}
+                    onChange={(e) => setAcrescimoServicos(Number(e.target.value))}
+                    placeholder="0,00"
+                    className="h-9"
+                  />
+                  <span className="text-[10px] text-gray-400">
+                    Suprimentos avulsos, frete ou serviços extras
+                  </span>
+                </div>
+              </div>
+
+              <div className="pt-2">
+                <Label htmlFor="fat-obs" className="text-xs text-gray-600">
+                  Observações na Fatura
+                </Label>
+                <Textarea
+                  id="fat-obs"
+                  rows={2}
+                  placeholder="Detalhes adicionais da apuração de contadores..."
+                  value={observacoesFatura}
+                  onChange={(e) => setObservacoesFatura(e.target.value)}
+                  className="text-xs bg-white"
+                />
+              </div>
+            </div>
+
+            {/* RESUMO / CONTABILIDADE GERAL A PAGAR */}
+            <div className="p-4 rounded-xl bg-blue-50/80 border border-blue-200 space-y-2 text-xs">
+              <span className="text-xs font-bold text-blue-950 uppercase tracking-wide block">
+                3. Contabilidade Geral do Faturamento
+              </span>
+              <div className="flex items-center justify-between text-blue-900">
+                <span>Valor Base da Locação:</span>
+                <span className="font-semibold">{formatCurrency(valorBaseAluguel)}</span>
+              </div>
+              {valorScanner > 0 && (
+                <div className="flex items-center justify-between text-blue-900">
+                  <span>Valor Scanner Faturado:</span>
+                  <span className="font-semibold">{formatCurrency(valorScanner)}</span>
+                </div>
+              )}
+              <div className="flex items-center justify-between text-blue-900">
+                <span>
+                  Páginas Excedentes ({paginasExcedentesCalculadas.toLocaleString('pt-BR')} págs):
+                </span>
+                <span className="font-semibold text-amber-800">
+                  +{formatCurrency(valorExcedenteCalculado)}
+                </span>
+              </div>
+              {acrescimoServicos > 0 && (
+                <div className="flex items-center justify-between text-emerald-800">
+                  <span>Serviços / Adicionais:</span>
+                  <span className="font-semibold">+{formatCurrency(acrescimoServicos)}</span>
+                </div>
+              )}
+              {descontoEquipamento > 0 && (
+                <div className="flex items-center justify-between text-red-700">
+                  <span>Descontos Aplicados:</span>
+                  <span className="font-semibold">−{formatCurrency(descontoEquipamento)}</span>
+                </div>
+              )}
+              <div className="pt-2.5 border-t border-blue-200 flex items-center justify-between text-blue-950 font-bold text-base">
+                <span>Total Geral a Ser Pago:</span>
+                <span className="text-xl text-blue-700 font-mono">
+                  {formatCurrency(valorTotalCalculado)}
+                </span>
+              </div>
+            </div>
+
+            <DialogFooter className="pt-2 gap-2">
               <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)}>
                 Cancelar
               </Button>
               <Button
                 type="submit"
                 disabled={isSubmitting || !selectedContratoId}
-                className="bg-blue-600 hover:bg-blue-700 text-white"
+                className="bg-blue-600 hover:bg-blue-700 text-white font-semibold"
               >
-                {isSubmitting ? 'Gerando...' : 'Gerar Fatura'}
+                {isSubmitting ? 'Gerando...' : 'Gravar Fatura e Atualizar Contador'}
               </Button>
             </DialogFooter>
           </form>
@@ -629,61 +869,76 @@ export default function Faturamento() {
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           {selectedFatura && (
             <div className="space-y-6 pt-2">
-              {/* Header da Fatura */}
-              <div className="flex items-start justify-between border-b border-gray-200 pb-4">
-                <div>
-                  <h2 className="text-xl font-bold text-gray-900">Fatura de Locação</h2>
-                  <p className="text-xs text-gray-500 mt-0.5">
-                    ID Fatura: #{selectedFatura.id.toUpperCase()} • Mês de Referência:{' '}
-                    <strong>{formatMonthYear(selectedFatura.mes_referencia)}</strong>
-                  </p>
+              {/* CABEÇALHO PERSONALIZADO DA EMPRESA */}
+              <div className="flex items-start justify-between border-b-2 border-gray-800 pb-4">
+                <div className="flex items-center gap-3">
+                  {configEmpresa?.logo && (
+                    <img
+                      src={configuracoesService.getLogoUrl(configEmpresa) || ''}
+                      alt="Logo Empresa"
+                      className="h-14 w-auto object-contain max-w-[150px]"
+                    />
+                  )}
+                  <div>
+                    <h2 className="text-lg font-bold uppercase text-gray-900">
+                      {configEmpresa?.razao_social || 'PrintGest Soluções'}
+                    </h2>
+                    {configEmpresa?.nome_fantasia && (
+                      <p className="text-xs text-gray-600">{configEmpresa.nome_fantasia}</p>
+                    )}
+                    <p className="text-[11px] text-gray-500">
+                      CNPJ: {configEmpresa?.cnpj || '-'} • Tel: {configEmpresa?.telefone || '-'}
+                    </p>
+                    <p className="text-[11px] text-gray-500">
+                      {configEmpresa?.endereco || ''}{' '}
+                      {configEmpresa?.cidade ? `• ${configEmpresa.cidade}/${configEmpresa.uf}` : ''}
+                    </p>
+                  </div>
                 </div>
                 <div className="text-right">
+                  <div className="border border-gray-900 px-3 py-1.5 rounded text-center">
+                    <span className="block text-[10px] uppercase font-bold text-gray-600">
+                      Fatura de Locação
+                    </span>
+                    <span className="text-base font-mono font-bold text-gray-900">
+                      #{selectedFatura.id.slice(0, 8).toUpperCase()}
+                    </span>
+                  </div>
+                  <span className="text-[11px] text-gray-500 block mt-1">
+                    Mês Ref: <strong>{formatMonthYear(selectedFatura.mes_referencia)}</strong>
+                  </span>
                   <span
-                    className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                    className={`mt-1 inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase ${
                       selectedFatura.status === 'paga'
-                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                        ? 'bg-emerald-100 text-emerald-800'
                         : selectedFatura.status === 'vencida'
-                          ? 'bg-amber-50 text-amber-700 border border-amber-200'
-                          : selectedFatura.status === 'cancelada'
-                            ? 'bg-red-50 text-red-700 border border-red-200'
-                            : 'bg-blue-50 text-blue-700 border border-blue-200'
+                          ? 'bg-amber-100 text-amber-800'
+                          : 'bg-blue-100 text-blue-800'
                     }`}
                   >
-                    {selectedFatura.status.toUpperCase()}
+                    {selectedFatura.status}
                   </span>
                 </div>
               </div>
 
-              {/* Informações do Cliente & Empresa */}
-              <div className="grid grid-cols-2 gap-4 text-xs">
-                <div>
-                  <span className="text-gray-400 font-semibold uppercase block">
-                    Sacado / Cliente
-                  </span>
-                  <p className="text-sm font-bold text-gray-900 mt-0.5">
-                    {selectedFatura.expand?.cliente_id?.nome_razao_social}
-                  </p>
-                  <p className="text-gray-600">
-                    Doc: {selectedFatura.expand?.cliente_id?.documento || '-'}
-                  </p>
-                  <p className="text-gray-600">
+              {/* Informações do Cliente */}
+              <div className="p-3 rounded-lg bg-gray-50 border border-gray-200 text-xs">
+                <span className="text-gray-400 font-semibold uppercase block">
+                  Dados do Cliente Sacado
+                </span>
+                <p className="text-sm font-bold text-gray-900 mt-0.5">
+                  {selectedFatura.expand?.cliente_id?.nome_razao_social}
+                </p>
+                <div className="grid grid-cols-2 gap-2 text-gray-600 mt-1">
+                  <p>CNPJ / CPF: {selectedFatura.expand?.cliente_id?.documento || '-'}</p>
+                  <p>E-mail: {selectedFatura.expand?.cliente_id?.email || '-'}</p>
+                  <p>
                     Endereço: {selectedFatura.expand?.cliente_id?.endereco || '-'}{' '}
                     {selectedFatura.expand?.cliente_id?.cidade
                       ? ` - ${selectedFatura.expand?.cliente_id?.cidade}/${selectedFatura.expand?.cliente_id?.uf}`
                       : ''}
                   </p>
-                </div>
-
-                <div>
-                  <span className="text-gray-400 font-semibold uppercase block">
-                    Cedente / Prestador
-                  </span>
-                  <p className="text-sm font-bold text-gray-900 mt-0.5">
-                    PrintGest Locação de Impressoras LTDA
-                  </p>
-                  <p className="text-gray-600">CNPJ: 10.987.654/0001-32</p>
-                  <p className="text-gray-600">Emissão: {formatDate(selectedFatura.created)}</p>
+                  <p>Emissão: {formatDate(selectedFatura.created)}</p>
                 </div>
               </div>
 
@@ -705,7 +960,9 @@ export default function Faturamento() {
                         Locação Mensal de Equipamento de Impressão
                       </td>
                       <td className="py-3 px-3 text-right text-gray-600">
-                        {selectedFatura.paginas_contratadas.toLocaleString('pt-BR')} págs
+                        {selectedFatura.paginas_contratadas > 0
+                          ? `${selectedFatura.paginas_contratadas.toLocaleString('pt-BR')} págs`
+                          : 'Sem franquia'}
                       </td>
                       <td className="py-3 px-3 text-right text-gray-600">-</td>
                       <td className="py-3 px-3 text-right text-gray-600">-</td>
@@ -715,7 +972,7 @@ export default function Faturamento() {
                     </tr>
                     <tr>
                       <td className="py-3 px-3 font-medium text-gray-900">
-                        Franquia de Páginas Adicionais (Excedentes)
+                        Páginas Adicionais / Consumo Excedente
                       </td>
                       <td className="py-3 px-3 text-right text-gray-600">-</td>
                       <td className="py-3 px-3 text-right text-gray-600">
@@ -728,13 +985,36 @@ export default function Faturamento() {
                         {formatCurrency(selectedFatura.valor_excedente)}
                       </td>
                     </tr>
+                    {selectedFatura.acrescimo_servicos && selectedFatura.acrescimo_servicos > 0 ? (
+                      <tr>
+                        <td colSpan={4} className="py-2.5 px-3 text-gray-700 font-medium">
+                          Serviços Adicionais / Acréscimos
+                        </td>
+                        <td className="py-2.5 px-3 text-right text-emerald-700 font-semibold">
+                          +{formatCurrency(selectedFatura.acrescimo_servicos)}
+                        </td>
+                      </tr>
+                    ) : null}
+                    {selectedFatura.desconto && selectedFatura.desconto > 0 ? (
+                      <tr>
+                        <td colSpan={4} className="py-2.5 px-3 text-gray-700 font-medium">
+                          Descontos Concedidos no Equipamento
+                        </td>
+                        <td className="py-2.5 px-3 text-right text-red-600 font-semibold">
+                          −{formatCurrency(selectedFatura.desconto)}
+                        </td>
+                      </tr>
+                    ) : null}
                   </tbody>
-                  <tfoot className="bg-gray-50 border-t border-gray-200">
+                  <tfoot className="bg-gray-50 border-t-2 border-gray-300">
                     <tr>
-                      <td colSpan={4} className="py-3 px-3 font-bold text-gray-900 text-right">
-                        VALOR TOTAL A COBRAR:
+                      <td
+                        colSpan={4}
+                        className="py-3 px-3 font-bold text-gray-900 text-right uppercase"
+                      >
+                        TOTAL GERAL A PAGAR:
                       </td>
-                      <td className="py-3 px-3 font-bold text-blue-700 text-sm text-right">
+                      <td className="py-3 px-3 font-bold text-blue-700 text-base text-right font-mono">
                         {formatCurrency(selectedFatura.valor_total)}
                       </td>
                     </tr>

@@ -174,9 +174,16 @@ export default function EquipamentoDetalhe() {
                 {equipamento.status}
               </Badge>
             </div>
-            <p className="text-xs text-gray-500 font-mono mt-0.5">
-              Número de Série: <strong>{equipamento.numero_serie}</strong>
-            </p>
+            <div className="flex items-center gap-3 text-xs text-gray-500 font-mono mt-0.5">
+              <span>
+                Número de Série: <strong>{equipamento.numero_serie}</strong>
+              </span>
+              {equipamento.numero_patrimonio && (
+                <span className="text-blue-700 font-semibold bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
+                  Patrimônio: {equipamento.numero_patrimonio}
+                </span>
+              )}
+            </div>
           </div>
         </div>
 
