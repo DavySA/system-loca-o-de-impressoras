@@ -27,6 +27,7 @@ import { useRealtime } from '@/hooks/use-realtime'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { DashboardDesempenhoEquipe } from '@/components/DashboardDesempenhoEquipe'
 import type { OrdemServico, Contrato } from '@/types'
 
 import PortalCliente from './PortalCliente'

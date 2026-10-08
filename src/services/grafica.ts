@@ -75,6 +75,7 @@ export const graficaService = {
 
   async abrirCaixa(data: {
     operador: string
+    operador_user_id?: string
     saldo_inicial: number
     equipamento_id?: string
     contador_anterior_mono?: number
@@ -95,6 +96,7 @@ export const graficaService = {
     const novoCaixa = await pb.collection('grafica_caixas').create<GraficaCaixa>({
       data: hojeStr,
       operador: data.operador,
+      operador_user_id: data.operador_user_id || undefined,
       status: 'aberto',
       data_abertura: hojeStr,
       equipamento_id: data.equipamento_id || undefined,
@@ -285,6 +287,7 @@ export const graficaService = {
 
   async registrarVenda(data: {
     caixa_id: string
+    operador_user_id?: string
     produto_id?: string
     descricao: string
     quantidade: number
@@ -343,6 +346,7 @@ export const graficaService = {
 
     const novaVenda = await pb.collection('grafica_vendas').create<GraficaVenda>({
       caixa_id: data.caixa_id,
+      operador_user_id: data.operador_user_id || undefined,
       data_hora: new Date().toISOString(),
       produto_id: data.produto_id || undefined,
       descricao: data.descricao,

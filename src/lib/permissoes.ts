@@ -12,6 +12,7 @@ import {
   UserCheck,
   Settings,
   FileCheck,
+  Target,
 } from 'lucide-react'
 
 export interface ModuloInfo {
@@ -81,6 +82,14 @@ export const TODOS_MODULOS: ModuloInfo[] = [
     grupo: 'operacional',
   },
   {
+    id: 'comissoes_metas',
+    nome: 'Comissões & Metas',
+    descricao: 'Acompanhamento de metas de vendas, serviços e comissões da equipe',
+    icon: Target,
+    corBadge: 'bg-amber-50 text-amber-700 border-amber-200',
+    grupo: 'gestao',
+  },
+  {
     id: 'servicos',
     nome: 'Serviços',
     descricao: 'Catálogo de manutenções preventivas, corretivas e tabelas de preço',
@@ -132,6 +141,7 @@ export const PRESETS_PERMISSOES = {
     'faturamento',
     'suprimentos',
     'grafica_rapida',
+    'comissoes_metas',
     'servicos',
     'relatorios',
     'usuarios',
@@ -143,9 +153,10 @@ export const PRESETS_PERMISSOES = {
     'ordens_servico',
     'suprimentos',
     'grafica_rapida',
+    'comissoes_metas',
     'servicos',
   ] as ModuloSistema[],
-  tecnico: ['ordens_servico'] as ModuloSistema[],
+  tecnico: ['ordens_servico', 'comissoes_metas'] as ModuloSistema[],
   cliente: ['dashboard', 'ordens_servico', 'faturamento', 'meu_contrato'] as ModuloSistema[],
 }
 

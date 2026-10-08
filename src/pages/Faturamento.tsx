@@ -47,7 +47,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { coraService } from '@/services/cora'
+import { formatCurrency, formatDate, formatMonthYear, formatDateTime } from '@/lib/formatters'
 import type { Fatura, Cliente, Contrato, ConfiguracoesEmpresa, Equipamento } from '@/types'
+import { Mail, Send, CreditCard } from 'lucide-react'
 
 export default function Faturamento() {
   const { user } = useAuth()
@@ -64,6 +67,10 @@ export default function Faturamento() {
   const [contratos, setContratos] = useState<Contrato[]>([])
   const [equipamentos, setEquipamentos] = useState<Equipamento[]>([])
   const [configEmpresa, setConfigEmpresa] = useState<ConfiguracoesEmpresa | null>(null)
+  const [coraConfig, setCoraConfig] = useState<IntegracaoCoraConfig | null>(null)
+  const [cobrancasFatura, setCobrancasFatura] = useState<CobrancaBoleto[]>([])
+  const [isSendingEmail, setIsSendingEmail] = useState(false)
+  const [isGerandoBoleto, setIsGerandoBoleto] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
 
   // KPIs
@@ -113,18 +120,20 @@ export default function Faturamento() {
         fatFilter = `cliente_id = "${clienteIdVinculado}"`
       }
 
-      const [fatList, clList, contList, eqList, cfg] = await Promise.all([
+      const [fatList, clList, contList, eqList, cfg, cora] = await Promise.all([
         faturasService.getAll(fatFilter),
         clientesService.getAll('status = "ativo"'),
         contratosService.getAll('status = "ativo"'),
         equipamentosService.getAll(),
         configuracoesService.get(),
+        coraService.getConfig(),
       ])
       setFaturas(fatList)
       setClientes(clList)
       setContratos(contList)
       setEquipamentos(eqList)
       setConfigEmpresa(cfg)
+      setCoraConfig(cora)
 
       // Calcular KPIs
       const now = new Date()
@@ -291,6 +300,7 @@ export default function Faturamento() {
             leitura_atual_color: colorAnterior,
             desconto: 0,
             acrescimo_servicos: 0,
+            criado_por_user_id: user?.id,
             observacoes: `Fatura gerada automaticamente em lote no ciclo recorrente do mês ${formatMonthYear(mesReferenciaLote)}.`,
             status: 'gerada',
           })
@@ -444,6 +454,7 @@ export default function Faturamento() {
         leitura_atual_color: Number(leituraAtualColor),
         desconto: Number(descontoEquipamento),
         acrescimo_servicos: Number(acrescimoServicos),
+        criado_por_user_id: user?.id,
         observacoes: observacoesFatura,
         status: 'gerada',
       })
@@ -517,9 +528,88 @@ export default function Faturamento() {
     }
   }
 
-  const handleOpenVisualizar = (f: Fatura) => {
+  const handleOpenVisualizar = async (f: Fatura) => {
     setSelectedFatura(f)
     setIsDetalhesOpen(true)
+    try {
+      const cobs = await coraService.getCobrancasPorFatura(f.id)
+      setCobrancasFatura(cobs)
+    } catch {
+      setCobrancasFatura([])
+    }
+  }
+
+  // Disparar envio de fatura por e-mail para o cliente
+  const handleEnviarEmailFatura = async (f: Fatura) => {
+    const emailDestino = f.expand?.cliente_id?.email
+    if (!emailDestino) {
+      toast({
+        variant: 'destructive',
+        title: 'Cliente sem e-mail',
+        description: 'Cadastre o e-mail do cliente para realizar o disparo da fatura.',
+      })
+      return
+    }
+
+    setIsSendingEmail(true)
+    try {
+      const res = await coraService.enviarFaturaEmail(f.id, emailDestino)
+      toast({
+        title: 'Fatura enviada com sucesso!',
+        description: `Disparada para ${res.destinatario || emailDestino}.`,
+      })
+      // Atualizar localmente a fatura selecionada e a listagem
+      const agora = new Date().toISOString()
+      const updatedFat = { ...f, enviada_email_em: agora, enviada_email_para: emailDestino }
+      setSelectedFatura(updatedFat)
+      setFaturas((prev) => prev.map((item) => (item.id === f.id ? updatedFat : item)))
+    } catch (err: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Falha no envio de e-mail',
+        description: err.message || 'Verifique as configurações de SMTP do servidor.',
+      })
+    } finally {
+      setIsSendingEmail(false)
+    }
+  }
+
+  // Gerar boleto estruturado Cora
+  const handleGerarBoletoCora = async (f: Fatura) => {
+    if (!coraConfig?.ativo || !coraConfig?.client_id) {
+      toast({
+        variant: 'destructive',
+        title: 'Integração Cora não configurada',
+        description:
+          'Acesse o menu "Personalizar > Integração Cora" e informe as credenciais de API para habilitar a emissão.',
+      })
+      return
+    }
+
+    setIsGerandoBoleto(true)
+    try {
+      const novaCobranca = await coraService.registrarCobranca({
+        fatura_id: f.id,
+        valor: f.valor_total,
+        data_vencimento: f.data_vencimento,
+        status: 'pendente',
+        criado_por_user_id: user?.id,
+      })
+      setCobrancasFatura((prev) => [novaCobranca, ...prev])
+      toast({
+        title: 'Boleto registrado com sucesso!',
+        description:
+          'A cobrança foi criada no ERP e sincronizará com a Cora assim que a chave de produção estiver validada.',
+      })
+    } catch (err: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Erro ao gerar cobrança',
+        description: err.message || 'Não foi possível registrar o boleto.',
+      })
+    } finally {
+      setIsGerandoBoleto(false)
+    }
   }
 
   const handlePrint = () => {
@@ -1697,16 +1787,125 @@ export default function Faturamento() {
                 </table>
               </div>
 
+              {/* STATUS DE ENVIO DE E-MAIL E COBRANÇA CORA */}
+              <div className="p-3 bg-gray-50 border border-gray-200 rounded-lg text-xs space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Mail className="w-4 h-4 text-blue-600" />
+                    <span className="font-semibold text-gray-800">Status de Envio por E-mail:</span>
+                  </div>
+                  {selectedFatura.enviada_email_em ? (
+                    <Badge
+                      variant="outline"
+                      className="bg-emerald-50 text-emerald-800 border-emerald-300"
+                    >
+                      Enviada em {formatDateTime(selectedFatura.enviada_email_em)}
+                    </Badge>
+                  ) : (
+                    <Badge variant="outline" className="bg-gray-100 text-gray-600 border-gray-300">
+                      Não enviada
+                    </Badge>
+                  )}
+                </div>
+
+                {selectedFatura.enviada_email_para && (
+                  <p className="text-[11px] text-gray-500">
+                    Destinatário registrado: <strong>{selectedFatura.enviada_email_para}</strong>
+                  </p>
+                )}
+
+                {/* Status do Boleto Cora */}
+                <div className="pt-2 border-t border-gray-200 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <CreditCard className="w-4 h-4 text-purple-600" />
+                    <span className="font-semibold text-gray-800">Cobrança / Boleto Cora:</span>
+                  </div>
+                  {coraConfig?.ativo && coraConfig?.client_id ? (
+                    <Badge
+                      variant="outline"
+                      className="bg-purple-50 text-purple-800 border-purple-300"
+                    >
+                      Integração Ativa
+                    </Badge>
+                  ) : (
+                    <Badge
+                      variant="outline"
+                      className="bg-amber-50 text-amber-800 border-amber-300"
+                    >
+                      Cora não configurada
+                    </Badge>
+                  )}
+                </div>
+
+                {cobrancasFatura.length > 0 && (
+                  <div className="mt-1 pt-1 border-t border-gray-100 space-y-1">
+                    {cobrancasFatura.map((cob) => (
+                      <div
+                        key={cob.id}
+                        className="flex items-center justify-between text-[11px] bg-white p-1.5 rounded border border-gray-200"
+                      >
+                        <span>
+                          Boleto #{cob.id.slice(0, 8).toUpperCase()} ({formatCurrency(cob.valor)})
+                        </span>
+                        <span className="font-semibold uppercase text-purple-700">
+                          [{cob.status}]
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
               {/* Botões de Ação na visualização */}
-              <div className="flex items-center justify-between pt-2 border-t border-gray-200">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handlePrint}
-                  className="flex items-center gap-1.5"
-                >
-                  <Printer className="w-4 h-4" /> Imprimir / Exportar
-                </Button>
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-gray-200">
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handlePrint}
+                    className="flex items-center gap-1.5"
+                  >
+                    <Printer className="w-4 h-4" /> Imprimir / Exportar
+                  </Button>
+
+                  {isAdmin && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={isSendingEmail}
+                      onClick={() => handleEnviarEmailFatura(selectedFatura)}
+                      className="border-blue-300 text-blue-700 hover:bg-blue-50 flex items-center gap-1.5"
+                      title="Enviar fatura em PDF/demonstrativo para o e-mail do cliente"
+                    >
+                      <Send className="w-4 h-4 text-blue-600" />
+                      {isSendingEmail ? 'Enviando e-mail...' : 'Enviar por E-mail'}
+                    </Button>
+                  )}
+
+                  {/* Botão Gerar Boleto Cora */}
+                  {coraConfig?.ativo && coraConfig?.client_id ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={isGerandoBoleto}
+                      onClick={() => handleGerarBoletoCora(selectedFatura)}
+                      className="border-purple-300 text-purple-700 hover:bg-purple-50 flex items-center gap-1.5"
+                    >
+                      <CreditCard className="w-4 h-4 text-purple-600" />
+                      {isGerandoBoleto ? 'Gerando...' : 'Gerar Boleto Cora'}
+                    </Button>
+                  ) : (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled
+                      className="opacity-60 cursor-not-allowed border-dashed text-gray-400 flex items-center gap-1.5"
+                      title="Integração Cora não configurada em Personalizar"
+                    >
+                      <CreditCard className="w-4 h-4" /> Boleto (Cora Pendente)
+                    </Button>
+                  )}
+                </div>
 
                 <div className="flex items-center gap-2">
                   {selectedFatura.status !== 'paga' && selectedFatura.status !== 'cancelada' && (

@@ -25,6 +25,7 @@ import { graficaService } from '@/services/grafica'
 import { equipamentosService } from '@/services/equipamentos'
 import { suprimentosService } from '@/services/suprimentos'
 import { configuracoesService } from '@/services/configuracoes'
+import { CaixaPrintDialog } from '@/components/CaixaPrintDialog'
 import { formatCurrency, formatDate, formatDateTime } from '@/lib/formatters'
 import { useAuth } from '@/context/AuthContext'
 import { useToast } from '@/hooks/use-toast'
@@ -79,11 +80,18 @@ export default function GraficaRapida() {
   const [vendasCaixaAberto, setVendasCaixaAberto] = useState<GraficaVenda[]>([])
   const [todasVendas, setTodasVendas] = useState<GraficaVenda[]>([])
 
+  // Configuração da Empresa para cabeçalho
+  const [configEmpresa, setConfigEmpresa] = useState<ConfiguracoesEmpresa | null>(null)
+
   // Modais
   const [isModalAbrirCaixaOpen, setIsModalAbrirCaixaOpen] = useState(false)
   const [isModalFecharCaixaOpen, setIsModalFecharCaixaOpen] = useState(false)
   const [isModalNovaVendaOpen, setIsModalNovaVendaOpen] = useState(false)
   const [isModalNovoProdutoOpen, setIsModalNovoProdutoOpen] = useState(false)
+  const [caixaParaImprimir, setCaixaParaImprimir] = useState<GraficaCaixa | null>(null)
+  const [contadoresImpressao, setContadoresImpressao] = useState<GraficaCaixaContador[]>([])
+  const [vendasImpressao, setVendasImpressao] = useState<GraficaVenda[]>([])
+  const [isModalImprimirCaixaOpen, setIsModalImprimirCaixaOpen] = useState(false)
 
   // Formulário Abertura de Caixa
   const [equipamentoSelecionadoCaixa, setEquipamentoSelecionadoCaixa] = useState<string>('')
@@ -162,13 +170,14 @@ export default function GraficaRapida() {
   const loadData = async () => {
     try {
       setIsLoading(true)
-      const [prods, equips, sups, cxAberto, caixas, vendas] = await Promise.all([
+      const [prods, equips, sups, cxAberto, caixas, vendas, cfg] = await Promise.all([
         graficaService.getProdutos(),
         equipamentosService.getAll(),
         suprimentosService.getAll(),
         graficaService.getCaixaAberto(),
         graficaService.getCaixas(),
         graficaService.getVendas(),
+        configuracoesService.get(),
       ])
 
       setProdutos(prods)
@@ -177,6 +186,7 @@ export default function GraficaRapida() {
       setCaixaAberto(cxAberto)
       setHistoricoCaixas(caixas)
       setTodasVendas(vendas)
+      if (cfg) setConfigEmpresa(cfg)
 
       if (cxAberto) {
         const [cnts, vCaixa] = await Promise.all([
@@ -210,6 +220,31 @@ export default function GraficaRapida() {
   useRealtime('grafica_caixa_contadores', () => loadData())
   useRealtime('grafica_vendas', () => loadData())
   useRealtime('suprimentos', () => loadData())
+  useRealtime('configuracoes_empresa', () => {
+    configuracoesService.get().then((cfg) => {
+      if (cfg) setConfigEmpresa(cfg)
+    })
+  })
+
+  // Visualizar e reimprimir cupom de qualquer caixa (aberto ou histórico fechado)
+  const handleImprimirCupomCaixa = async (caixa: GraficaCaixa) => {
+    try {
+      const [cnts, vnds] = await Promise.all([
+        graficaService.getContadoresPorCaixa(caixa.id),
+        graficaService.getVendas(caixa.id),
+      ])
+      setCaixaParaImprimir(caixa)
+      setContadoresImpressao(cnts)
+      setVendasImpressao(vnds)
+      setIsModalImprimirCaixaOpen(true)
+    } catch (e: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Erro ao carregar cupom',
+        description: e.message || 'Não foi possível carregar os dados para impressão.',
+      })
+    }
+  }
 
   // Iniciar contadores para abertura
   const handleAbrirModalAbertura = async () => {
@@ -292,6 +327,7 @@ export default function GraficaRapida() {
 
       await graficaService.abrirCaixa({
         operador: user?.name || 'Operador do Caixa',
+        operador_user_id: user?.id,
         saldo_inicial: Number(saldoInicialCaixa) || 0,
         equipamento_id: equipamentoSelecionadoCaixa,
         contador_anterior_mono: Number(contadorAnteriorMono) || 0,
@@ -412,6 +448,7 @@ export default function GraficaRapida() {
     try {
       await graficaService.registrarVenda({
         caixa_id: caixaAberto.id,
+        operador_user_id: user?.id,
         produto_id: vendaProdutoId || undefined,
         descricao: vendaDescricao,
         quantidade: Number(vendaQuantidade),
@@ -579,6 +616,14 @@ export default function GraficaRapida() {
                 className="bg-blue-600 hover:bg-blue-700 text-white shadow-xs text-xs flex items-center gap-1.5"
               >
                 <ShoppingCart className="w-4 h-4" /> Registrar Serviço / Venda
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => handleImprimirCupomCaixa(caixaAberto)}
+                className="border-gray-300 text-gray-700 hover:bg-gray-50 text-xs flex items-center gap-1.5"
+                title="Visualizar ou imprimir cupom do caixa"
+              >
+                <Printer className="w-4 h-4 text-blue-600" /> Cupom
               </Button>
               <Button
                 onClick={handleAbrirModalFechamento}
@@ -1249,6 +1294,7 @@ export default function GraficaRapida() {
                           Lucro Caixa
                         </th>
                         <th className="py-2.5 px-3 text-right">Saldo Final</th>
+                        <th className="py-2.5 px-3 text-right">Cupom</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
@@ -1296,6 +1342,17 @@ export default function GraficaRapida() {
                           </td>
                           <td className="py-2.5 px-3 text-right font-mono font-bold text-blue-900">
                             {formatCurrency(cx.saldo_final_dinheiro || 0)}
+                          </td>
+                          <td className="py-2.5 px-3 text-right">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleImprimirCupomCaixa(cx)}
+                              className="h-7 px-2 text-[11px] flex items-center gap-1 text-gray-700 hover:text-blue-700 hover:border-blue-300 shadow-xs"
+                              title="Imprimir cupom/ficha do fechamento"
+                            >
+                              <Printer className="w-3.5 h-3.5" /> Cupom
+                            </Button>
                           </td>
                         </tr>
                       ))}
@@ -2152,6 +2209,16 @@ export default function GraficaRapida() {
           </form>
         </DialogContent>
       </Dialog>
+
+      {/* Modal 5: Impressão do Cupom/Ficha do Caixa */}
+      <CaixaPrintDialog
+        open={isModalImprimirCaixaOpen}
+        onOpenChange={setIsModalImprimirCaixaOpen}
+        caixa={caixaParaImprimir}
+        contadores={contadoresImpressao}
+        vendas={vendasImpressao}
+        configEmpresa={configEmpresa}
+      />
     </div>
   )
 }

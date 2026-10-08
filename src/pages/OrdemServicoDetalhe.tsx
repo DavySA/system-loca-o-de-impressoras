@@ -93,6 +93,8 @@ export default function OrdemServicoDetalhe() {
   // Modal Confirmação Concluir
   const [concluirModalOpen, setConcluirModalOpen] = useState(false)
   const [concluirComentario, setConcluirComentario] = useState('Serviço finalizado com sucesso.')
+  const [tipoAtendimento, setTipoAtendimento] = useState<'contrato' | 'particular'>('contrato')
+  const [valorServicoParticular, setValorServicoParticular] = useState<number>(0)
 
   // Modal Relatório de Impressão Dedicado
   const [isPrintDialogOpen, setIsPrintDialogOpen] = useState(false)
@@ -123,6 +125,8 @@ export default function OrdemServicoDetalhe() {
       setAssinaturaDataUrl(os.assinatura_desenho || '')
       setAssinaturaNome(os.assinatura_nome || os.expand?.cliente_id?.nome_razao_social || '')
       setAssinaturaCpf(os.assinatura_cpf || '')
+      setTipoAtendimento(os.tipo_atendimento || 'contrato')
+      setValorServicoParticular(os.valor_servico || 0)
 
       if (os.equipamento_id) {
         try {
@@ -219,13 +223,28 @@ export default function OrdemServicoDetalhe() {
   const handleConfirmarConclusao = async () => {
     if (!id) return
     try {
-      // Salvar também parecer_tecnico, contador e assinatura se informados
+      // Calcular valor de peças e total particular se aplicável
+      const totalPecasValor = pecasUtilizadas.reduce(
+        (acc, p) => acc + (p.valor_cobrado || p.custo_unitario || 0) * p.quantidade,
+        0,
+      )
+      const totalParticular =
+        tipoAtendimento === 'particular'
+          ? (Number(valorServicoParticular) || 0) + totalPecasValor
+          : 0
+
+      // Salvar dados técnicos, tipo de atendimento, valores de serviço e peças, técnico vinculado
       await ordensServicoService.update(id, {
         contador_atual: Number(contadorAtual),
         parecer_tecnico: parecerTecnico || concluirComentario,
         assinatura_desenho: assinaturaDataUrl,
         assinatura_nome: assinaturaNome,
         assinatura_cpf: assinaturaCpf,
+        tipo_atendimento: tipoAtendimento,
+        valor_servico: tipoAtendimento === 'particular' ? Number(valorServicoParticular) || 0 : 0,
+        valor_pecas: totalPecasValor,
+        valor_total_particular: totalParticular,
+        tecnico_user_id: user?.id,
       })
       await ordensServicoService.marcarConcluida(
         id,
@@ -1077,6 +1096,81 @@ export default function OrdemServicoDetalhe() {
               Deseja marcar esta O.S. como concluída? O encerramento ficará registrado com timestamp
               atual.
             </p>
+
+            {/* Atendimento Particular vs Coberto por Contrato */}
+            <div className="p-3 bg-gray-50 border border-gray-200 rounded-lg space-y-2 text-xs">
+              <Label className="font-semibold text-gray-800 block">
+                Tipo de Cobrança do Atendimento:
+              </Label>
+              <div className="flex items-center gap-4">
+                <label className="flex items-center gap-1.5 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="tipoAtendimento"
+                    value="contrato"
+                    checked={tipoAtendimento === 'contrato'}
+                    onChange={() => setTipoAtendimento('contrato')}
+                  />
+                  <span>Franquia / Contrato de Locação</span>
+                </label>
+                <label className="flex items-center gap-1.5 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="tipoAtendimento"
+                    value="particular"
+                    checked={tipoAtendimento === 'particular'}
+                    onChange={() => setTipoAtendimento('particular')}
+                  />
+                  <span className="font-semibold text-blue-700">
+                    Particular (Serviço + Peças à parte)
+                  </span>
+                </label>
+              </div>
+
+              {tipoAtendimento === 'particular' && (
+                <div className="pt-2 border-t border-gray-200 space-y-2">
+                  <div className="space-y-1">
+                    <Label htmlFor="val-serv" className="text-[11px] font-medium text-gray-700">
+                      Mão de Obra / Valor do Serviço (R$):
+                    </Label>
+                    <Input
+                      id="val-serv"
+                      type="number"
+                      step="0.01"
+                      value={valorServicoParticular}
+                      onChange={(e) => setValorServicoParticular(parseFloat(e.target.value) || 0)}
+                      className="text-xs font-mono"
+                    />
+                  </div>
+                  <div className="text-[11px] text-gray-600 flex justify-between bg-white p-2 rounded border">
+                    <span>Peças aplicadas nesta O.S.:</span>
+                    <strong className="font-mono">
+                      {formatCurrency(
+                        pecasUtilizadas.reduce(
+                          (acc, p) =>
+                            acc + (p.valor_cobrado || p.custo_unitario || 0) * p.quantidade,
+                          0,
+                        ),
+                      )}
+                    </strong>
+                  </div>
+                  <div className="text-xs text-blue-900 font-bold flex justify-between pt-1">
+                    <span>Total do Atendimento Particular:</span>
+                    <span className="font-mono text-emerald-700">
+                      {formatCurrency(
+                        (Number(valorServicoParticular) || 0) +
+                          pecasUtilizadas.reduce(
+                            (acc, p) =>
+                              acc + (p.valor_cobrado || p.custo_unitario || 0) * p.quantidade,
+                            0,
+                          ),
+                      )}
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
+
             <div className="space-y-1.5">
               <Label htmlFor="parecer-fin" className="text-xs font-medium text-gray-700">
                 Parecer de Conclusão:

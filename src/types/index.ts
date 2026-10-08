@@ -8,6 +8,7 @@ export type ModuloSistema =
   | 'faturamento'
   | 'suprimentos'
   | 'grafica_rapida'
+  | 'comissoes_metas'
   | 'relatorios'
   | 'servicos'
   | 'usuarios'
@@ -110,6 +111,11 @@ export interface OrdemServico {
   data_abertura?: string
   data_conclusao?: string
   tecnico_responsavel?: string
+  tecnico_user_id?: string
+  tipo_atendimento?: 'contrato' | 'particular'
+  valor_servico?: number
+  valor_pecas?: number
+  valor_total_particular?: number
   contador_atual?: number
   assinatura_desenho?: string
   assinatura_nome?: string
@@ -122,6 +128,7 @@ export interface OrdemServico {
     cliente_id?: Cliente
     equipamento_id?: Equipamento
     servico_id?: Servico
+    tecnico_user_id?: AppUser
   }
 }
 
@@ -171,11 +178,91 @@ export interface Fatura {
   acrescimo_servicos?: number
   observacoes?: string
   data_vencimento?: string
+  enviada_email_em?: string
+  enviada_email_para?: string
+  criado_por_user_id?: string
   created: string
   updated: string
   expand?: {
     cliente_id?: Cliente
     contrato_id?: Contrato
+    criado_por_user_id?: AppUser
+  }
+}
+
+// ----------------------------------------------------
+// INTEGRAÇÃO BANCO CORA & COBRANÇAS / BOLETOS
+// ----------------------------------------------------
+
+export interface IntegracaoCoraConfig {
+  id: string
+  ativo: boolean
+  ambiente: 'sandbox' | 'producao'
+  client_id?: string
+  client_secret?: string
+  chave_pix?: string
+  certificado_nome?: string
+  instrucoes_padrao?: string
+  juros_mensal_percentual?: number
+  multa_percentual?: number
+  created: string
+  updated: string
+}
+
+export interface CobrancaBoleto {
+  id: string
+  fatura_id: string
+  status: 'pendente' | 'gerado' | 'pago' | 'cancelado'
+  cora_invoice_id?: string
+  valor: number
+  data_vencimento?: string
+  codigo_barras?: string
+  linha_digitavel?: string
+  pix_copia_cola?: string
+  pix_qr_code_url?: string
+  pdf_url?: string
+  criado_por_user_id?: string
+  created: string
+  updated: string
+  expand?: {
+    fatura_id?: Fatura
+    criado_por_user_id?: AppUser
+  }
+}
+
+// ----------------------------------------------------
+// COMISSÕES & METAS
+// ----------------------------------------------------
+
+export type PeriodoMeta = 'mensal' | 'trimestral' | 'semestral' | 'anual'
+
+export type MetricaMeta =
+  | 'vendas_insumos_grafica'
+  | 'servicos_grafica'
+  | 'os_particulares'
+  | 'faturamento_gerado'
+  | 'atendimentos_concluidos'
+
+export type StatusMeta = 'em_andamento' | 'atingida' | 'nao_atingida' | 'cancelada'
+
+export interface MetaColaborador {
+  id: string
+  user_id: string
+  titulo: string
+  periodo: PeriodoMeta
+  mes_ano_referencia?: string // Ex: "2025-05"
+  data_inicio?: string
+  data_fim?: string
+  tipo_metrica: MetricaMeta
+  valor_objetivo: number
+  tipo_comissao?: 'percentual' | 'valor_fixo'
+  valor_comissao?: number
+  status: StatusMeta
+  observacoes?: string
+  created: string
+  updated: string
+  expand?: {
+    user_id?: AppUser
   }
 }
 
@@ -269,6 +356,7 @@ export interface GraficaCaixa {
   id: string
   data: string
   operador: string
+  operador_user_id?: string
   status: 'aberto' | 'fechado'
   data_abertura: string
   data_fechamento?: string
@@ -292,6 +380,7 @@ export interface GraficaCaixa {
   updated: string
   expand?: {
     equipamento_id?: Equipamento
+    operador_user_id?: AppUser
   }
 }
 
@@ -326,6 +415,7 @@ export interface GraficaCaixaContador {
 export interface GraficaVenda {
   id: string
   caixa_id: string
+  operador_user_id?: string
   data_hora: string
   produto_id?: string
   descricao: string
@@ -345,5 +435,6 @@ export interface GraficaVenda {
     produto_id?: GraficaProduto
     suprimento_baixado_id?: Suprimento
     caixa_id?: GraficaCaixa
+    operador_user_id?: AppUser
   }
 }

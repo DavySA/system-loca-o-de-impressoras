@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-08T01:18:00.826Z",
+  "generatedAt": "2026-10-08T01:45:33.024Z",
   "collections": [
     {
       "name": "users",
@@ -532,6 +532,38 @@
           "type": "text",
           "required": false,
           "system": false
+        },
+        {
+          "name": "tipo_atendimento",
+          "type": "select",
+          "required": false,
+          "system": false,
+          "selectValues": ["contrato", "particular"]
+        },
+        {
+          "name": "valor_servico",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "valor_pecas",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "valor_total_particular",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "tecnico_user_id",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "users"
         }
       ],
       "indexes": [
@@ -724,6 +756,25 @@
           "type": "text",
           "required": false,
           "system": false
+        },
+        {
+          "name": "enviada_email_em",
+          "type": "date",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "enviada_email_para",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "criado_por_user_id",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "users"
         }
       ],
       "indexes": [
@@ -1297,6 +1348,13 @@
           "type": "number",
           "required": false,
           "system": false
+        },
+        {
+          "name": "operador_user_id",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "users"
         }
       ],
       "indexes": [
@@ -1557,11 +1615,315 @@
           "required": false,
           "system": false,
           "autodateTriggers": ["onCreate", "onUpdate"]
+        },
+        {
+          "name": "operador_user_id",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "users"
         }
       ],
       "indexes": [
         "CREATE INDEX idx_gvendas_caixa ON grafica_vendas (caixa_id)",
         "CREATE INDEX idx_gvendas_data ON grafica_vendas (data_hora DESC)"
+      ]
+    },
+    {
+      "name": "integracao_cora",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != '' && @request.auth.role = 'administrador'",
+        "view": "@request.auth.id != '' && @request.auth.role = 'administrador'",
+        "create": "@request.auth.id != '' && @request.auth.role = 'administrador'",
+        "update": "@request.auth.id != '' && @request.auth.role = 'administrador'",
+        "delete": "@request.auth.id != '' && @request.auth.role = 'administrador'"
+      },
+      "fields": [
+        {
+          "name": "ativo",
+          "type": "bool",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "ambiente",
+          "type": "select",
+          "required": true,
+          "system": false,
+          "selectValues": ["sandbox", "producao"]
+        },
+        {
+          "name": "client_id",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "client_secret",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "chave_pix",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "certificado_nome",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "instrucoes_padrao",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "juros_mensal_percentual",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "multa_percentual",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": []
+    },
+    {
+      "name": "cobrancas_boletos",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "@request.auth.id != ''",
+        "update": "@request.auth.id != ''",
+        "delete": "@request.auth.id != '' && @request.auth.role = 'administrador'"
+      },
+      "fields": [
+        {
+          "name": "fatura_id",
+          "type": "relation",
+          "required": true,
+          "system": false,
+          "collectionRef": "faturas"
+        },
+        {
+          "name": "status",
+          "type": "select",
+          "required": true,
+          "system": false,
+          "selectValues": ["pendente", "gerado", "pago", "cancelado"]
+        },
+        {
+          "name": "cora_invoice_id",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "valor",
+          "type": "number",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "data_vencimento",
+          "type": "date",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "codigo_barras",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "linha_digitavel",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "pix_copia_cola",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "pix_qr_code_url",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "pdf_url",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "criado_por_user_id",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "users"
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": [
+        "CREATE INDEX idx_cobranca_fatura ON cobrancas_boletos (fatura_id)",
+        "CREATE INDEX idx_cobranca_status ON cobrancas_boletos (status)"
+      ]
+    },
+    {
+      "name": "metas",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "@request.auth.id != '' && @request.auth.role = 'administrador'",
+        "update": "@request.auth.id != '' && @request.auth.role = 'administrador'",
+        "delete": "@request.auth.id != '' && @request.auth.role = 'administrador'"
+      },
+      "fields": [
+        {
+          "name": "user_id",
+          "type": "relation",
+          "required": true,
+          "system": false,
+          "collectionRef": "users"
+        },
+        {
+          "name": "titulo",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "periodo",
+          "type": "select",
+          "required": true,
+          "system": false,
+          "selectValues": ["mensal", "trimestral", "semestral", "anual"]
+        },
+        {
+          "name": "mes_ano_referencia",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "data_inicio",
+          "type": "date",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "data_fim",
+          "type": "date",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "tipo_metrica",
+          "type": "select",
+          "required": true,
+          "system": false,
+          "selectValues": [
+            "vendas_insumos_grafica",
+            "servicos_grafica",
+            "os_particulares",
+            "faturamento_gerado",
+            "atendimentos_concluidos"
+          ]
+        },
+        {
+          "name": "valor_objetivo",
+          "type": "number",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "tipo_comissao",
+          "type": "select",
+          "required": false,
+          "system": false,
+          "selectValues": ["percentual", "valor_fixo"]
+        },
+        {
+          "name": "valor_comissao",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "status",
+          "type": "select",
+          "required": true,
+          "system": false,
+          "selectValues": ["em_andamento", "atingida", "nao_atingida", "cancelada"]
+        },
+        {
+          "name": "observacoes",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": [
+        "CREATE INDEX idx_metas_user ON metas (user_id)",
+        "CREATE INDEX idx_metas_status ON metas (status)"
       ]
     }
   ]

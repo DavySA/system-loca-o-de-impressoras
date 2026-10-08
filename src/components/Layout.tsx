@@ -19,6 +19,7 @@ import {
   Mail,
   Globe,
   Share2,
+  Target,
 } from 'lucide-react'
 import { useAuth } from '@/context/AuthContext'
 import { ordensServicoService } from '@/services/ordensServico'
@@ -267,6 +268,13 @@ export default function Layout({ children }: LayoutProps) {
       ocultarParaCliente: true,
     },
     {
+      label: 'Comissões & Metas',
+      path: '/comissoes-metas',
+      icon: Target,
+      modulo: 'comissoes_metas',
+      ocultarParaCliente: true,
+    },
+    {
       label: 'Relatórios',
       path: '/relatorios',
       icon: BarChart3,
@@ -324,6 +332,8 @@ export default function Layout({ children }: LayoutProps) {
     if (path.startsWith('/ordens-de-servico/')) return 'Detalhes da Ordem de Serviço'
     if (path.startsWith('/ordens-de-servico')) return 'Ordens de Serviço'
     if (path.startsWith('/faturamento')) return 'Faturamento & Leituras'
+    if (path.startsWith('/grafica-rapida')) return 'Gráfica Rápida (PDV/Caixa)'
+    if (path.startsWith('/comissoes-metas')) return 'Comissões & Metas'
     if (path.startsWith('/servicos')) return 'Catálogo de Serviços'
     if (path.startsWith('/usuarios')) return 'Gerenciamento de Usuários'
     if (path.startsWith('/personalizar')) return 'Personalizar Empresa & Cabeçalho'
