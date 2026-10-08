@@ -9,12 +9,12 @@ onRecordUpdate((e) => {
   e.next()
 }, 'grafica_caixas')
 
-// Impede exclusão de registros de caixas caso o usuário autenticado seja operador
+// Impede exclusão de registros de caixas caso o usuário autenticado não seja administrador
 onRecordDelete((e) => {
   const authRecord = e.auth
-  if (authRecord && authRecord.getString('role') === 'operador') {
+  if (authRecord && authRecord.getString('role') !== 'administrador') {
     throw new ForbiddenError(
-      'Usuários com perfil de Operador não possuem permissão para excluir registros salvos.',
+      'Apenas administradores possuem permissão para excluir registros de caixa salvos.',
     )
   }
   e.next()

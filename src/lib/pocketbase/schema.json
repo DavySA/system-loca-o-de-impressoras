@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-06T14:22:56.331Z",
+  "generatedAt": "2026-10-08T01:18:00.826Z",
   "collections": [
     {
       "name": "users",
@@ -51,6 +51,12 @@
           "required": false,
           "system": false,
           "collectionRef": "clientes"
+        },
+        {
+          "name": "permissoes",
+          "type": "json",
+          "required": false,
+          "system": false
         }
       ],
       "indexes": [

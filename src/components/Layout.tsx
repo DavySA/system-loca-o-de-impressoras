@@ -39,7 +39,8 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { formatDate, formatCurrency } from '@/lib/formatters'
-import type { ConfiguracoesEmpresa } from '@/types'
+import type { ConfiguracoesEmpresa, ModuloSistema } from '@/types'
+import { resolverPermissoesUsuario } from '@/lib/permissoes'
 
 interface LayoutProps {
   children?: React.ReactNode
@@ -198,61 +199,119 @@ export default function Layout({ children }: LayoutProps) {
     setMobileDrawerOpen(false)
   }, [location.pathname])
 
-  const navItems = [
+  const userPerms = resolverPermissoesUsuario(user || {})
+
+  interface MenuItem {
+    label: string
+    path: string
+    icon: any
+    badge?: number
+    modulo: ModuloSistema
+    somenteCliente?: boolean
+    ocultarParaCliente?: boolean
+  }
+
+  const rawMenuItems: MenuItem[] = [
     {
       label: 'Dashboard',
       path: '/dashboard',
       icon: LayoutGrid,
-      roles: ['administrador', 'cliente'],
+      modulo: 'dashboard',
     },
-    { label: 'Clientes', path: '/clientes', icon: Users, roles: ['administrador', 'operador'] },
+    {
+      label: 'Clientes',
+      path: '/clientes',
+      icon: Users,
+      modulo: 'clientes',
+      ocultarParaCliente: true,
+    },
     {
       label: 'Equipamentos',
       path: '/equipamentos',
       icon: Printer,
-      roles: ['administrador', 'operador'],
+      modulo: 'equipamentos',
+      ocultarParaCliente: true,
     },
     {
       label: 'Ordens de Serviço',
       path: '/ordens-de-servico',
       icon: ClipboardList,
       badge: openOsCount,
-      roles: ['administrador', 'tecnico', 'cliente', 'operador'],
+      modulo: 'ordens_servico',
     },
     {
       label: 'Faturamento',
       path: '/faturamento',
       icon: Receipt,
-      roles: ['administrador', 'cliente'],
+      modulo: 'faturamento',
     },
     {
       label: 'Meu Contrato',
       path: user?.cliente_id ? `/clientes/${user.cliente_id}` : '/clientes',
       icon: Receipt,
-      roles: ['cliente'],
+      modulo: 'meu_contrato',
+      somenteCliente: true,
     },
     {
       label: 'Suprimentos',
       path: '/suprimentos',
       icon: Package,
-      roles: ['administrador', 'operador'],
+      modulo: 'suprimentos',
+      ocultarParaCliente: true,
     },
     {
       label: 'Gráfica Rápida',
       path: '/grafica-rapida',
       icon: Layers,
-      roles: ['administrador', 'operador'],
+      modulo: 'grafica_rapida',
+      ocultarParaCliente: true,
     },
     {
       label: 'Relatórios',
       path: '/relatorios',
       icon: BarChart3,
-      roles: ['administrador'],
+      modulo: 'relatorios',
+      ocultarParaCliente: true,
     },
-    { label: 'Serviços', path: '/servicos', icon: Wrench, roles: ['administrador', 'operador'] },
-    { label: 'Usuários', path: '/usuarios', icon: Users, roles: ['administrador'] },
-    { label: 'Personalizar', path: '/personalizar', icon: Settings, roles: ['administrador'] },
-  ].filter((item) => item.roles.includes(role))
+    {
+      label: 'Serviços',
+      path: '/servicos',
+      icon: Wrench,
+      modulo: 'servicos',
+      ocultarParaCliente: true,
+    },
+    {
+      label: 'Usuários',
+      path: '/usuarios',
+      icon: Users,
+      modulo: 'usuarios',
+      ocultarParaCliente: true,
+    },
+    {
+      label: 'Personalizar',
+      path: '/personalizar',
+      icon: Settings,
+      modulo: 'personalizar',
+      ocultarParaCliente: true,
+    },
+  ]
+
+  const navItems = rawMenuItems.filter((item) => {
+    // 1. Cliente: apenas Dashboard, Ordens de Serviço, Faturamento e Meu Contrato
+    if (role === 'cliente') {
+      if (item.ocultarParaCliente) return false
+      return ['dashboard', 'ordens_servico', 'faturamento', 'meu_contrato'].includes(item.modulo)
+    }
+
+    // 2. Não-cliente nunca vê Meu Contrato
+    if (item.somenteCliente) return false
+
+    // 3. Administrador vê tudo
+    if (role === 'administrador') return true
+
+    // 4. Usuários com funções marcadas veem exatamente o que foi marcado
+    return userPerms.includes(item.modulo)
+  })
 
   // Obter título da página atual
   const getPageTitle = () => {

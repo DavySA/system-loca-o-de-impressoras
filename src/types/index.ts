@@ -1,5 +1,32 @@
 export type UserRole = 'administrador' | 'tecnico' | 'cliente' | 'operador'
 
+export type ModuloSistema =
+  | 'dashboard'
+  | 'clientes'
+  | 'equipamentos'
+  | 'ordens_servico'
+  | 'faturamento'
+  | 'suprimentos'
+  | 'grafica_rapida'
+  | 'relatorios'
+  | 'servicos'
+  | 'usuarios'
+  | 'personalizar'
+  | 'meu_contrato'
+
+export interface AppUser {
+  id: string
+  email: string
+  name?: string
+  avatar?: string
+  role?: UserRole
+  cliente_id?: string
+  permissoes?: ModuloSistema[]
+  expand?: {
+    cliente_id?: Cliente
+  }
+}
+
 export interface Cliente {
   id: string
   nome_razao_social: string
@@ -149,18 +176,6 @@ export interface Fatura {
   expand?: {
     cliente_id?: Cliente
     contrato_id?: Contrato
-  }
-}
-
-export interface AppUser {
-  id: string
-  email: string
-  name?: string
-  avatar?: string
-  role?: UserRole
-  cliente_id?: string
-  expand?: {
-    cliente_id?: Cliente
   }
 }
 

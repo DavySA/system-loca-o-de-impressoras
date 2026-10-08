@@ -39,49 +39,140 @@ export function App() {
           {/* Rota Raiz redireciona para Dashboard */}
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
 
-          {/* Rotas Autenticadas com restrição por Perfil */}
+          {/* Rotas Autenticadas com Proteção por Módulos/Funções Marcadas */}
           {/* Dashboard executivo / Portal do Cliente */}
-          <Route element={<ProtectedRoute allowedRoles={['administrador', 'cliente']} />}>
+          <Route
+            element={
+              <ProtectedRoute
+                requiredModulo="dashboard"
+                allowedRoles={['administrador', 'cliente']}
+              />
+            }
+          >
             <Route path="/dashboard" element={<Dashboard />} />
           </Route>
 
-          {/* Módulos operacionais: Administrador e Operador */}
-          <Route element={<ProtectedRoute allowedRoles={['administrador', 'operador']} />}>
-            <Route path="/clientes" element={<Clientes />} />
-            <Route path="/equipamentos" element={<Equipamentos />} />
-            <Route path="/equipamentos/:id" element={<EquipamentoDetalhe />} />
-            <Route path="/suprimentos" element={<Suprimentos />} />
-            <Route path="/grafica-rapida" element={<GraficaRapida />} />
-            <Route path="/servicos" element={<Servicos />} />
-          </Route>
-
-          {/* Configurações e Relatórios restritos ao Administrador */}
-          <Route element={<ProtectedRoute allowedRoles={['administrador']} />}>
-            <Route path="/usuarios" element={<Usuarios />} />
-            <Route path="/personalizar" element={<Personalizar />} />
-            <Route path="/relatorios" element={<Relatorios />} />
-          </Route>
-
-          {/* Cliente, Operador e Administrador podem acessar detalhes/contrato do cliente */}
+          {/* Clientes */}
           <Route
-            element={<ProtectedRoute allowedRoles={['administrador', 'cliente', 'operador']} />}
+            element={
+              <ProtectedRoute
+                requiredModulo="clientes"
+                allowedRoles={['administrador', 'operador']}
+              />
+            }
+          >
+            <Route path="/clientes" element={<Clientes />} />
+          </Route>
+
+          {/* Detalhes do Cliente / Meu Contrato (Cliente vê apenas o seu contrato; Admin e Operador com permissão de clientes veem) */}
+          <Route
+            element={
+              <ProtectedRoute
+                requiredModulo="clientes"
+                allowedRoles={['administrador', 'cliente', 'operador']}
+              />
+            }
           >
             <Route path="/clientes/:id" element={<ClienteDetalhe />} />
           </Route>
 
-          {/* Ordens de Serviço: Administrador, Técnico, Cliente e Operador */}
+          {/* Equipamentos */}
           <Route
             element={
-              <ProtectedRoute allowedRoles={['administrador', 'tecnico', 'cliente', 'operador']} />
+              <ProtectedRoute
+                requiredModulo="equipamentos"
+                allowedRoles={['administrador', 'operador']}
+              />
+            }
+          >
+            <Route path="/equipamentos" element={<Equipamentos />} />
+            <Route path="/equipamentos/:id" element={<EquipamentoDetalhe />} />
+          </Route>
+
+          {/* Suprimentos */}
+          <Route
+            element={
+              <ProtectedRoute
+                requiredModulo="suprimentos"
+                allowedRoles={['administrador', 'operador']}
+              />
+            }
+          >
+            <Route path="/suprimentos" element={<Suprimentos />} />
+          </Route>
+
+          {/* Gráfica Rápida (PDV/Caixa) */}
+          <Route
+            element={
+              <ProtectedRoute
+                requiredModulo="grafica_rapida"
+                allowedRoles={['administrador', 'operador']}
+              />
+            }
+          >
+            <Route path="/grafica-rapida" element={<GraficaRapida />} />
+          </Route>
+
+          {/* Catálogo de Serviços */}
+          <Route
+            element={
+              <ProtectedRoute
+                requiredModulo="servicos"
+                allowedRoles={['administrador', 'operador']}
+              />
+            }
+          >
+            <Route path="/servicos" element={<Servicos />} />
+          </Route>
+
+          {/* Ordens de Serviço */}
+          <Route
+            element={
+              <ProtectedRoute
+                requiredModulo="ordens_servico"
+                allowedRoles={['administrador', 'tecnico', 'cliente', 'operador']}
+              />
             }
           >
             <Route path="/ordens-de-servico" element={<OrdensServico />} />
             <Route path="/ordens-de-servico/:id" element={<OrdemServicoDetalhe />} />
           </Route>
 
-          {/* Faturamento: Administrador e Cliente */}
-          <Route element={<ProtectedRoute allowedRoles={['administrador', 'cliente']} />}>
+          {/* Faturamento */}
+          <Route
+            element={
+              <ProtectedRoute
+                requiredModulo="faturamento"
+                allowedRoles={['administrador', 'cliente']}
+              />
+            }
+          >
             <Route path="/faturamento" element={<Faturamento />} />
+          </Route>
+
+          {/* Relatórios Mensais (Apenas Admin ou quem tiver a função de relatórios marcada) */}
+          <Route
+            element={
+              <ProtectedRoute requiredModulo="relatorios" allowedRoles={['administrador']} />
+            }
+          >
+            <Route path="/relatorios" element={<Relatorios />} />
+          </Route>
+
+          {/* Usuários (Gerenciamento de contas e permissões) */}
+          <Route
+            element={<ProtectedRoute requiredModulo="usuarios" allowedRoles={['administrador']} />}
+          >
+            <Route path="/usuarios" element={<Usuarios />} />
+          </Route>
+
+          {/* Personalizar (Configurações institucionais) */}
+          <Route
+            element={
+              <ProtectedRoute requiredModulo="personalizar" allowedRoles={['administrador']} />
+            }
+          >
+            <Route path="/personalizar" element={<Personalizar />} />
           </Route>
 
           {/* Rota 404 Não Encontrada */}

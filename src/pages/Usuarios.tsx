@@ -11,6 +11,10 @@ import {
   CheckCircle2,
   Mail,
   AlertCircle,
+  Sliders,
+  Check,
+  X,
+  FileCheck,
 } from 'lucide-react'
 import { usuariosService } from '@/services/usuarios'
 import { clientesService } from '@/services/clientes'
@@ -19,6 +23,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
+import { Checkbox } from '@/components/ui/checkbox'
 import {
   Dialog,
   DialogContent,
@@ -33,7 +38,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import type { AppUser, Cliente, UserRole } from '@/types'
+import type { AppUser, Cliente, ModuloSistema, UserRole } from '@/types'
+import { TODOS_MODULOS, PRESETS_PERMISSOES, resolverPermissoesUsuario } from '@/lib/permissoes'
 
 export default function Usuarios() {
   const { toast } = useToast()
@@ -47,12 +53,13 @@ export default function Usuarios() {
   // Modal Criar / Editar Usuário
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [editingUser, setEditingUser] = useState<AppUser | null>(null)
+  const [isClienteAccount, setIsClienteAccount] = useState(false)
   const [formData, setFormData] = useState({
     name: '',
     email: '',
-    role: 'administrador' as UserRole,
     cliente_id: '',
     password: '',
+    permissoes: [] as ModuloSistema[],
   })
   const [isSubmitting, setIsSubmitting] = useState(false)
 
@@ -89,12 +96,14 @@ export default function Usuarios() {
 
   const handleOpenCreate = () => {
     setEditingUser(null)
+    setIsClienteAccount(false)
+    // Pré-marcar funções padrão para um novo usuário operador/técnico
     setFormData({
       name: '',
       email: '',
-      role: 'tecnico',
       cliente_id: '',
       password: '',
+      permissoes: [...PRESETS_PERMISSOES.operador],
     })
     setIsModalOpen(true)
   }
@@ -102,14 +111,95 @@ export default function Usuarios() {
   const handleOpenEdit = (user: AppUser, e: React.MouseEvent) => {
     e.stopPropagation()
     setEditingUser(user)
+    const isCli = user.role === 'cliente'
+    setIsClienteAccount(isCli)
+
+    const resolved = resolverPermissoesUsuario(user)
     setFormData({
       name: user.name || '',
       email: user.email,
-      role: user.role || 'administrador',
       cliente_id: user.cliente_id || '',
       password: '',
+      permissoes: isCli ? [...PRESETS_PERMISSOES.cliente] : [...resolved],
     })
     setIsModalOpen(true)
+  }
+
+  const handleToggleModulo = (modId: ModuloSistema) => {
+    if (isClienteAccount) return // Conta de cliente é restrita
+    setFormData((prev) => {
+      const exists = prev.permissoes.includes(modId)
+      if (exists) {
+        return {
+          ...prev,
+          permissoes: prev.permissoes.filter((id) => id !== modId),
+        }
+      } else {
+        return {
+          ...prev,
+          permissoes: [...prev.permissoes, modId],
+        }
+      }
+    })
+  }
+
+  const handleSelectAllModulos = () => {
+    if (isClienteAccount) return
+    // Selecionar todos os módulos exceto 'meu_contrato' (específico de cliente)
+    const todosExcetoCliente = TODOS_MODULOS.filter((m) => m.id !== 'meu_contrato').map((m) => m.id)
+    setFormData((prev) => ({
+      ...prev,
+      permissoes: todosExcetoCliente,
+    }))
+  }
+
+  const handleClearAllModulos = () => {
+    if (isClienteAccount) return
+    setFormData((prev) => ({
+      ...prev,
+      permissoes: [],
+    }))
+  }
+
+  const handleApplyPreset = (preset: 'admin' | 'operador' | 'tecnico') => {
+    if (isClienteAccount) return
+    if (preset === 'admin') {
+      setFormData((prev) => ({
+        ...prev,
+        permissoes: [...PRESETS_PERMISSOES.administrador],
+      }))
+    } else if (preset === 'operador') {
+      setFormData((prev) => ({
+        ...prev,
+        permissoes: [...PRESETS_PERMISSOES.operador],
+      }))
+    } else if (preset === 'tecnico') {
+      setFormData((prev) => ({
+        ...prev,
+        permissoes: [...PRESETS_PERMISSOES.tecnico],
+      }))
+    }
+  }
+
+  // Define o papel que será gravado no banco de acordo com as permissões marcadas
+  const inferRoleFromPermissions = (isCli: boolean, perms: ModuloSistema[]): UserRole => {
+    if (isCli) return 'cliente'
+    const temUsuarios = perms.includes('usuarios')
+    const temPersonalizar = perms.includes('personalizar')
+    const temRelatorios = perms.includes('relatorios')
+
+    // Se tiver acesso a usuários e configurações/personalização, é administrador
+    if (temUsuarios && temPersonalizar) {
+      return 'administrador'
+    }
+
+    // Se só tem ordens de serviço, é técnico
+    if (perms.length === 1 && perms.includes('ordens_servico')) {
+      return 'tecnico'
+    }
+
+    // Se tem outros módulos mas sem admin de usuários, classifica como operador
+    return 'operador'
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -123,7 +213,7 @@ export default function Usuarios() {
       return
     }
 
-    if (formData.role === 'cliente' && !formData.cliente_id) {
+    if (isClienteAccount && !formData.cliente_id) {
       toast({
         variant: 'destructive',
         title: 'Vínculo obrigatório',
@@ -132,25 +222,39 @@ export default function Usuarios() {
       return
     }
 
+    if (!isClienteAccount && formData.permissoes.length === 0) {
+      toast({
+        variant: 'destructive',
+        title: 'Nenhuma função marcada',
+        description: 'Selecione pelo menos uma função/módulo do sistema para este usuário.',
+      })
+      return
+    }
+
+    const calculatedRole = inferRoleFromPermissions(isClienteAccount, formData.permissoes)
+    const finalPermissoes = isClienteAccount ? PRESETS_PERMISSOES.cliente : formData.permissoes
+
     setIsSubmitting(true)
     try {
       if (editingUser) {
         await usuariosService.update(editingUser.id, {
           name: formData.name,
-          role: formData.role,
-          cliente_id: formData.role === 'cliente' ? formData.cliente_id : undefined,
+          role: calculatedRole,
+          cliente_id: isClienteAccount ? formData.cliente_id : undefined,
+          permissoes: finalPermissoes,
         })
         toast({
           title: 'Usuário atualizado!',
-          description: 'Dados salvos com sucesso.',
+          description: 'Funções e acessos salvos com sucesso.',
         })
       } else {
         await usuariosService.create({
           name: formData.name,
           email: formData.email,
-          role: formData.role,
-          cliente_id: formData.role === 'cliente' ? formData.cliente_id : undefined,
+          role: calculatedRole,
+          cliente_id: isClienteAccount ? formData.cliente_id : undefined,
           password: formData.password || undefined,
+          permissoes: finalPermissoes,
         })
         toast({
           title: 'Usuário cadastrado com sucesso!',
@@ -266,41 +370,6 @@ export default function Usuarios() {
     return matchesSearch && matchesRole
   })
 
-  const getRoleBadge = (role?: UserRole) => {
-    switch (role) {
-      case 'administrador':
-        return (
-          <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-purple-50 text-purple-700 border border-purple-200">
-            Administrador
-          </span>
-        )
-      case 'tecnico':
-        return (
-          <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200">
-            Técnico
-          </span>
-        )
-      case 'cliente':
-        return (
-          <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
-            Cliente
-          </span>
-        )
-      case 'operador':
-        return (
-          <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200">
-            Operador
-          </span>
-        )
-      default:
-        return (
-          <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-gray-100 text-gray-700 border border-gray-200">
-            {role || 'Indefinido'}
-          </span>
-        )
-    }
-  }
-
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -310,8 +379,8 @@ export default function Usuarios() {
             Gerenciamento de Usuários
           </h1>
           <p className="text-xs text-gray-500 mt-0.5">
-            Controle de acessos, papéis (administrador, operador, técnico, cliente) e redefinição de
-            senhas
+            Cadastre novos usuários e defina exatamente quais funções e módulos cada um terá acesso
+            no sistema
           </p>
         </div>
         <Button
@@ -322,55 +391,43 @@ export default function Usuarios() {
         </Button>
       </div>
 
-      {/* Explicação dos papéis */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+      {/* Cards de orientação das funções */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
         <div className="bg-white p-3.5 rounded-xl border border-gray-200 shadow-xs flex items-start gap-3">
-          <div className="w-8 h-8 rounded-lg bg-purple-100 text-purple-700 flex items-center justify-center shrink-0">
-            <Shield className="w-4 h-4" />
+          <div className="w-8 h-8 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center shrink-0">
+            <Sliders className="w-4 h-4" />
           </div>
           <div>
-            <h4 className="text-xs font-bold text-gray-900">Administrador</h4>
+            <h4 className="text-xs font-bold text-gray-900">Funções Marcáveis</h4>
             <p className="text-[11px] text-gray-500 mt-0.5">
-              Acesso total: clientes, contratos, faturamento em lote, relatórios, configurações e
-              usuários.
+              Defina na lista de funções exatamente o que cada usuário interno pode ver: Dashboard,
+              Clientes, Equipamentos, O.S., Faturamento, Suprimentos e Gráfica.
             </p>
           </div>
         </div>
 
-        <div className="bg-white p-3.5 rounded-xl border border-amber-200 bg-amber-50/30 shadow-xs flex items-start gap-3">
+        <div className="bg-white p-3.5 rounded-xl border border-amber-200 bg-amber-50/20 shadow-xs flex items-start gap-3">
           <div className="w-8 h-8 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
             <Shield className="w-4 h-4" />
           </div>
           <div>
-            <h4 className="text-xs font-bold text-amber-900">Operador</h4>
+            <h4 className="text-xs font-bold text-amber-900">Proteção de Dados & Exclusão</h4>
             <p className="text-[11px] text-amber-800 mt-0.5">
-              Opera caixa da gráfica, cadastra clientes, equipamentos, suprimentos, serviços e O.S.{' '}
-              <strong>Sem permissão para apagar dados</strong>.
+              Usuários sem função de Administrador têm botões de exclusão ocultos e restrições
+              validadas pelo servidor.
             </p>
           </div>
         </div>
 
-        <div className="bg-white p-3.5 rounded-xl border border-gray-200 shadow-xs flex items-start gap-3">
-          <div className="w-8 h-8 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center shrink-0">
-            <CheckCircle2 className="w-4 h-4" />
-          </div>
-          <div>
-            <h4 className="text-xs font-bold text-gray-900">Técnico</h4>
-            <p className="text-[11px] text-gray-500 mt-0.5">
-              Acesso exclusivo às Ordens de Serviço (atendimentos técnicos, peças e laudos).
-            </p>
-          </div>
-        </div>
-
-        <div className="bg-white p-3.5 rounded-xl border border-gray-200 shadow-xs flex items-start gap-3">
+        <div className="bg-white p-3.5 rounded-xl border border-emerald-200 bg-emerald-50/20 shadow-xs flex items-start gap-3">
           <div className="w-8 h-8 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
             <Building className="w-4 h-4" />
           </div>
           <div>
-            <h4 className="text-xs font-bold text-gray-900">Cliente</h4>
-            <p className="text-[11px] text-gray-500 mt-0.5">
-              Visualiza faturas próprias, contrato de locação e abre chamados de assistência
-              técnica.
+            <h4 className="text-xs font-bold text-emerald-900">Acesso Restrito do Cliente</h4>
+            <p className="text-[11px] text-emerald-800 mt-0.5">
+              O cliente continua restrito ao seu portal: abertura de chamados técnicos,
+              histórico/faturamento e scanner do contrato.
             </p>
           </div>
         </div>
@@ -392,14 +449,14 @@ export default function Usuarios() {
         <div className="w-48">
           <Select value={filterRole} onValueChange={setFilterRole}>
             <SelectTrigger className="h-10 text-xs sm:text-sm">
-              <SelectValue placeholder="Papel" />
+              <SelectValue placeholder="Tipo de Acesso" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="todos">Todos os Papéis</SelectItem>
+              <SelectItem value="todos">Todos os Usuários</SelectItem>
               <SelectItem value="administrador">Administrador</SelectItem>
-              <SelectItem value="operador">Operador</SelectItem>
+              <SelectItem value="operador">Operador Personalizado</SelectItem>
               <SelectItem value="tecnico">Técnico</SelectItem>
-              <SelectItem value="cliente">Cliente</SelectItem>
+              <SelectItem value="cliente">Conta de Cliente</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -413,8 +470,8 @@ export default function Usuarios() {
               <tr>
                 <th className="py-3 px-4">Nome do Usuário</th>
                 <th className="py-3 px-4">E-mail de Login</th>
-                <th className="py-3 px-4">Papel / Perfil</th>
-                <th className="py-3 px-4">Cliente Vinculado</th>
+                <th className="py-3 px-4">Tipo / Vínculo</th>
+                <th className="py-3 px-4">Funções Habilitadas</th>
                 <th className="py-3 px-4 text-right">Ações</th>
               </tr>
             </thead>
@@ -436,21 +493,82 @@ export default function Usuarios() {
                   const clienteNome =
                     u.expand?.cliente_id?.nome_razao_social ||
                     clientes.find((c) => c.id === u.cliente_id)?.nome_razao_social
+
+                  const perms = resolverPermissoesUsuario(u)
+                  const isCliente = u.role === 'cliente'
+                  const isAdmin = u.role === 'administrador'
+
                   return (
                     <tr key={u.id} className="hover:bg-gray-50/80 transition-colors">
                       <td className="py-3.5 px-4 font-semibold text-gray-900">
-                        {u.name || 'Sem nome'}
+                        <div className="flex items-center gap-2">
+                          <span>{u.name || 'Sem nome'}</span>
+                          {isAdmin && (
+                            <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-purple-100 text-purple-700">
+                              Admin
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="py-3.5 px-4 text-gray-600 text-xs font-mono">{u.email}</td>
-                      <td className="py-3.5 px-4">{getRoleBadge(u.role)}</td>
-                      <td className="py-3.5 px-4 text-gray-600 text-xs">
-                        {clienteNome ? (
-                          <span className="font-medium text-gray-900 flex items-center gap-1">
-                            <Building className="w-3.5 h-3.5 text-gray-400" />
-                            {clienteNome}
-                          </span>
+                      <td className="py-3.5 px-4 text-xs">
+                        {isCliente ? (
+                          <div className="flex flex-col">
+                            <span className="font-semibold text-emerald-700 flex items-center gap-1">
+                              <Building className="w-3.5 h-3.5 text-emerald-600" />
+                              Portal do Cliente
+                            </span>
+                            <span className="text-gray-500 text-[11px] truncate max-w-[180px]">
+                              {clienteNome || 'Cliente não associado'}
+                            </span>
+                          </div>
                         ) : (
-                          <span className="text-gray-400 italic">Não vinculado</span>
+                          <span className="font-medium text-gray-700 flex items-center gap-1">
+                            <Shield className="w-3.5 h-3.5 text-blue-600" />
+                            Usuário Interno
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-3.5 px-4">
+                        {isCliente ? (
+                          <div className="flex flex-wrap gap-1">
+                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                              Chamados (O.S.)
+                            </span>
+                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                              Faturamento Próprio
+                            </span>
+                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                              Contrato Digitalizado
+                            </span>
+                          </div>
+                        ) : (
+                          <div className="flex flex-wrap gap-1 max-w-md">
+                            {perms.length === 0 ? (
+                              <span className="text-xs text-gray-400 italic">Sem funções</span>
+                            ) : isAdmin ? (
+                              <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-200">
+                                Todas as funções liberadas ({perms.length})
+                              </span>
+                            ) : (
+                              perms.slice(0, 4).map((p) => {
+                                const mod = TODOS_MODULOS.find((m) => m.id === p)
+                                return (
+                                  <span
+                                    key={p}
+                                    className={`text-[10px] px-1.5 py-0.5 rounded border font-medium ${mod?.corBadge || 'bg-gray-100 text-gray-700'}`}
+                                  >
+                                    {mod?.nome.split(' ')[0] || p}
+                                  </span>
+                                )
+                              })
+                            )}
+                            {!isAdmin && perms.length > 4 && (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 font-semibold">
+                                +{perms.length - 4} funções
+                              </span>
+                            )}
+                          </div>
                         )}
                       </td>
                       <td className="py-3.5 px-4 text-right">
@@ -469,7 +587,7 @@ export default function Usuarios() {
                             size="sm"
                             onClick={(e) => handleOpenEdit(u, e)}
                             className="h-8 w-8 p-0 text-gray-500 hover:text-blue-600"
-                            title="Editar"
+                            title="Editar Funções do Usuário"
                           >
                             <Edit className="w-4 h-4" />
                           </Button>
@@ -478,7 +596,7 @@ export default function Usuarios() {
                             size="sm"
                             onClick={(e) => handleOpenDelete(u, e)}
                             className="h-8 w-8 p-0 text-gray-500 hover:text-red-600"
-                            title="Excluir"
+                            title="Excluir Usuário"
                           >
                             <Trash2 className="w-4 h-4" />
                           </Button>
@@ -493,93 +611,254 @@ export default function Usuarios() {
         </div>
       </div>
 
-      {/* Modal Criar/Editar Usuário */}
+      {/* Modal Criar / Editar Usuário com Lista de Funções Marcáveis */}
       <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{editingUser ? 'Editar Usuário' : 'Novo Usuário'}</DialogTitle>
+            <DialogTitle className="flex items-center gap-2">
+              <Sliders className="w-5 h-5 text-blue-600" />
+              {editingUser ? 'Editar Usuário e Funções' : 'Cadastrar Novo Usuário'}
+            </DialogTitle>
           </DialogHeader>
 
           <form onSubmit={handleSubmit} className="space-y-4 pt-2">
-            <div className="space-y-1.5">
-              <Label htmlFor="u-name">Nome Completo</Label>
-              <Input
-                id="u-name"
-                value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                placeholder="Ex: Carlos Eduardo da Silva"
-                required
-              />
+            {/* Dados básicos */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="u-name">Nome Completo</Label>
+                <Input
+                  id="u-name"
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  placeholder="Ex: Carlos Eduardo da Silva"
+                  required
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="u-email">E-mail de Acesso (Login)</Label>
+                <Input
+                  id="u-email"
+                  type="email"
+                  value={formData.email}
+                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                  placeholder="Ex: carlos@empresa.com.br"
+                  disabled={!!editingUser}
+                  required
+                />
+                {editingUser && (
+                  <p className="text-[11px] text-gray-400">
+                    O e-mail de login não pode ser alterado diretamente.
+                  </p>
+                )}
+              </div>
             </div>
 
-            <div className="space-y-1.5">
-              <Label htmlFor="u-email">E-mail de Acesso</Label>
-              <Input
-                id="u-email"
-                type="email"
-                value={formData.email}
-                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                placeholder="Ex: carlos@empresa.com.br"
-                disabled={!!editingUser}
-                required
-              />
-              {editingUser && (
-                <p className="text-[11px] text-gray-400">
-                  O e-mail de login não pode ser alterado diretamente por aqui.
-                </p>
+            {/* Alternador de Tipo de Conta: Usuário Interno (Colaborador) vs Cliente Externo */}
+            <div className="p-3.5 rounded-xl border border-gray-200 bg-gray-50/70 space-y-2">
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label className="text-xs font-bold text-gray-900 block">Tipo de Conta</Label>
+                  <p className="text-[11px] text-gray-500">
+                    Selecione se o usuário é um colaborador interno ou um cliente da locadora
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={!isClienteAccount ? 'default' : 'outline'}
+                    className={!isClienteAccount ? 'bg-blue-600 text-white' : 'text-gray-700'}
+                    onClick={() => {
+                      setIsClienteAccount(false)
+                      if (formData.permissoes.length === 0) {
+                        setFormData((prev) => ({
+                          ...prev,
+                          permissoes: [...PRESETS_PERMISSOES.operador],
+                        }))
+                      }
+                    }}
+                  >
+                    Colaborador Interno
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={isClienteAccount ? 'default' : 'outline'}
+                    className={isClienteAccount ? 'bg-emerald-600 text-white' : 'text-gray-700'}
+                    onClick={() => {
+                      setIsClienteAccount(true)
+                      setFormData((prev) => ({
+                        ...prev,
+                        permissoes: [...PRESETS_PERMISSOES.cliente],
+                      }))
+                    }}
+                  >
+                    Cliente Externo
+                  </Button>
+                </div>
+              </div>
+
+              {/* Vínculo de Cliente quando for conta de cliente */}
+              {isClienteAccount && (
+                <div className="pt-2 border-t border-gray-200 mt-2 space-y-1.5">
+                  <Label htmlFor="u-cliente" className="text-emerald-900 font-semibold text-xs">
+                    Empresa / Cliente Vinculado
+                  </Label>
+                  <Select
+                    value={formData.cliente_id}
+                    onValueChange={(val: string) => setFormData({ ...formData, cliente_id: val })}
+                  >
+                    <SelectTrigger id="u-cliente" className="h-10 text-sm bg-white">
+                      <SelectValue placeholder="Selecione o cliente da lista..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {clientes.map((c) => (
+                        <SelectItem key={c.id} value={c.id}>
+                          {c.nome_razao_social} ({c.documento || 'Sem doc'})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <div className="p-2.5 rounded-lg bg-emerald-50 border border-emerald-100 text-emerald-800 text-[11px] space-y-1">
+                    <p className="font-semibold flex items-center gap-1">
+                      <Building className="w-3.5 h-3.5 text-emerald-600" /> Regra do Cliente (Portal
+                      Exclusivo):
+                    </p>
+                    <p>
+                      O cliente terá acesso exclusivo à abertura de chamados (O.S.), histórico de
+                      faturas e visualização do contrato digitalizado anexado. Módulos gerenciais
+                      internos permanecem bloqueados.
+                    </p>
+                  </div>
+                </div>
               )}
             </div>
 
-            <div className="space-y-1.5">
-              <Label htmlFor="u-role">Papel no Sistema</Label>
-              <Select
-                value={formData.role}
-                onValueChange={(val: UserRole) => setFormData({ ...formData, role: val })}
-              >
-                <SelectTrigger id="u-role" className="h-10 text-sm">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="administrador">Administrador (Acesso total)</SelectItem>
-                  <SelectItem value="operador">
-                    Operador (Caixa, cadastros, sem exclusão)
-                  </SelectItem>
-                  <SelectItem value="tecnico">Técnico (Apenas Ordens de Serviço)</SelectItem>
-                  <SelectItem value="cliente">Cliente (Faturamento próprio e chamados)</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+            {/* SEÇÃO PRINCIPAL: LISTA DE FUNÇÕES NO SISTEMA PARA O ADMINISTRADOR MARCAR */}
+            {!isClienteAccount && (
+              <div className="space-y-3 p-4 rounded-xl border border-blue-200 bg-blue-50/30">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                  <div>
+                    <h3 className="text-sm font-bold text-gray-900 flex items-center gap-1.5">
+                      <Sliders className="w-4 h-4 text-blue-600" />
+                      Funções e Módulos do Sistema
+                    </h3>
+                    <p className="text-[11px] text-gray-600">
+                      Marque as funções que este usuário terá permissão para acessar no ERP:
+                    </p>
+                  </div>
 
-            {formData.role === 'cliente' && (
-              <div className="space-y-1.5 p-3 rounded-lg bg-blue-50 border border-blue-100">
-                <Label htmlFor="u-cliente" className="text-blue-900 font-semibold">
-                  Vincular ao Cliente / Empresa
-                </Label>
-                <Select
-                  value={formData.cliente_id}
-                  onValueChange={(val: string) => setFormData({ ...formData, cliente_id: val })}
-                >
-                  <SelectTrigger id="u-cliente" className="h-10 text-sm bg-white">
-                    <SelectValue placeholder="Selecione o cliente correspondente..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {clientes.map((c) => (
-                      <SelectItem key={c.id} value={c.id}>
-                        {c.nome_razao_social} ({c.documento || 'Sem doc'})
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <p className="text-[11px] text-blue-700">
-                  O usuário verá somente as faturas e equipamentos desta empresa.
-                </p>
+                  {/* Atalhos rápidos de preenchimento */}
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="text-[10px] text-gray-500 font-medium">Modelos:</span>
+                    <button
+                      type="button"
+                      onClick={() => handleApplyPreset('admin')}
+                      className="px-2 py-0.5 rounded text-[11px] font-medium bg-purple-100 hover:bg-purple-200 text-purple-800 transition-colors"
+                      title="Marcar todas as funções"
+                    >
+                      Admin Completo
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleApplyPreset('operador')}
+                      className="px-2 py-0.5 rounded text-[11px] font-medium bg-amber-100 hover:bg-amber-200 text-amber-800 transition-colors"
+                      title="Operação: Parque, Suprimentos, Gráfica, O.S., Serviços"
+                    >
+                      Operador
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleApplyPreset('tecnico')}
+                      className="px-2 py-0.5 rounded text-[11px] font-medium bg-blue-100 hover:bg-blue-200 text-blue-800 transition-colors"
+                      title="Apenas Ordens de Serviço"
+                    >
+                      Técnico
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSelectAllModulos}
+                      className="px-1.5 py-0.5 rounded text-[11px] text-gray-600 hover:text-gray-900 hover:bg-gray-200"
+                    >
+                      Marcar Todos
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleClearAllModulos}
+                      className="px-1.5 py-0.5 rounded text-[11px] text-gray-600 hover:text-red-700 hover:bg-red-50"
+                    >
+                      Limpar
+                    </button>
+                  </div>
+                </div>
+
+                {/* Grid com todas as funções marcáveis */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+                  {TODOS_MODULOS.filter((m) => m.id !== 'meu_contrato').map((modulo) => {
+                    const isChecked = formData.permissoes.includes(modulo.id)
+                    const Icon = modulo.icon
+                    return (
+                      <div
+                        key={modulo.id}
+                        onClick={() => handleToggleModulo(modulo.id)}
+                        className={`p-3 rounded-lg border transition-all cursor-pointer flex items-start gap-2.5 select-none ${
+                          isChecked
+                            ? 'bg-white border-blue-500 shadow-xs ring-1 ring-blue-500/20'
+                            : 'bg-white/60 border-gray-200 hover:border-gray-300 opacity-80'
+                        }`}
+                      >
+                        <Checkbox
+                          checked={isChecked}
+                          onCheckedChange={() => handleToggleModulo(modulo.id)}
+                          className="mt-0.5 data-[state=checked]:bg-blue-600"
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <Icon
+                              className={`w-4 h-4 ${isChecked ? 'text-blue-600' : 'text-gray-400'}`}
+                            />
+                            <span
+                              className={`text-xs font-semibold ${
+                                isChecked ? 'text-gray-900' : 'text-gray-600'
+                              }`}
+                            >
+                              {modulo.nome}
+                            </span>
+                          </div>
+                          <p className="text-[10px] text-gray-500 mt-0.5 leading-snug">
+                            {modulo.descricao}
+                          </p>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+
+                <div className="flex items-center justify-between text-[11px] text-gray-500 pt-1">
+                  <span>
+                    Funções selecionadas:{' '}
+                    <strong className="text-blue-700">{formData.permissoes.length}</strong> de{' '}
+                    {TODOS_MODULOS.filter((m) => m.id !== 'meu_contrato').length}
+                  </span>
+                  <span>
+                    Papel gerado:{' '}
+                    <strong className="text-gray-800 uppercase">
+                      {inferRoleFromPermissions(false, formData.permissoes)}
+                    </strong>
+                  </span>
+                </div>
               </div>
             )}
 
+            {/* Senha Inicial se for novo usuário */}
             {!editingUser && (
-              <div className="space-y-1.5">
+              <div className="space-y-1.5 pt-1">
                 <Label htmlFor="u-pass">
-                  Senha Inicial <span className="text-gray-400 font-normal">(Opcional)</span>
+                  Senha Inicial de Acesso{' '}
+                  <span className="text-gray-400 font-normal">(Opcional)</span>
                 </Label>
                 <Input
                   id="u-pass"
@@ -595,7 +874,7 @@ export default function Usuarios() {
               </div>
             )}
 
-            <DialogFooter className="pt-2">
+            <DialogFooter className="pt-3 border-t border-gray-100">
               <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)}>
                 Cancelar
               </Button>
@@ -604,7 +883,11 @@ export default function Usuarios() {
                 disabled={isSubmitting}
                 className="bg-blue-600 hover:bg-blue-700 text-white"
               >
-                {isSubmitting ? 'Salvando...' : editingUser ? 'Salvar Alterações' : 'Criar Usuário'}
+                {isSubmitting
+                  ? 'Salvando...'
+                  : editingUser
+                    ? 'Salvar Funções'
+                    : 'Cadastrar Usuário'}
               </Button>
             </DialogFooter>
           </form>
@@ -631,7 +914,7 @@ export default function Usuarios() {
                   <strong>E-mail:</strong> {userToReset.email}
                 </p>
                 <p>
-                  <strong>Papel:</strong> {userToReset.role}
+                  <strong>Tipo:</strong> {userToReset.role}
                 </p>
               </div>
 

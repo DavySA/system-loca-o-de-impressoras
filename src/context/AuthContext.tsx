@@ -28,6 +28,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         avatar: pb.authStore.record.avatar,
         role: pb.authStore.record.role || 'administrador',
         cliente_id: pb.authStore.record.cliente_id || undefined,
+        permissoes: Array.isArray(pb.authStore.record.permissoes)
+          ? pb.authStore.record.permissoes
+          : undefined,
       })
     } else {
       setUser(null)
@@ -44,6 +47,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           avatar: record.avatar,
           role: record.role || 'administrador',
           cliente_id: record.cliente_id || undefined,
+          permissoes: Array.isArray(record.permissoes) ? record.permissoes : undefined,
         })
       } else {
         setUser(null)
@@ -65,6 +69,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         avatar: authData.record.avatar,
         role: authData.record.role || 'administrador',
         cliente_id: authData.record.cliente_id || undefined,
+        permissoes: Array.isArray(authData.record.permissoes)
+          ? authData.record.permissoes
+          : undefined,
       })
     }
   }

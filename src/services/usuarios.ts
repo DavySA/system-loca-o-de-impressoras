@@ -1,5 +1,5 @@
 import pb from '@/lib/pocketbase/client'
-import type { AppUser, UserRole } from '@/types'
+import type { AppUser, UserRole, ModuloSistema } from '@/types'
 
 export interface CreateUserData {
   email: string
@@ -7,6 +7,7 @@ export interface CreateUserData {
   name: string
   role: UserRole
   cliente_id?: string
+  permissoes?: ModuloSistema[]
 }
 
 export const usuariosService = {
@@ -32,6 +33,7 @@ export const usuariosService = {
       passwordConfirm: password,
       name: data.name,
       role: data.role,
+      permissoes: data.permissoes || [],
     }
     if (data.cliente_id) {
       payload.cliente_id = data.cliente_id
