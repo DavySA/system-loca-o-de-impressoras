@@ -59,6 +59,7 @@ import type {
   Equipamento,
   Suprimento,
   CategoriaProdutoGrafica,
+  ConfiguracoesEmpresa,
 } from '@/types'
 
 export default function GraficaRapida() {

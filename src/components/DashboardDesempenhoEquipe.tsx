@@ -14,7 +14,7 @@ import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/com
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
 import { formatCurrency } from '@/lib/formatters'
-import { pb } from '@/lib/pocketbase/client'
+import pb from '@/lib/pocketbase/client'
 import type { AppUser, MetaColaborador } from '@/types'
 
 interface DesempenhoColaborador {

@@ -536,6 +536,7 @@ export default function ComissoesMetas() {
               const prog = progressos[meta.id]
               const metricaInfo = METRICAS_LABELS[meta.tipo_metrica] || {
                 label: meta.tipo_metrica,
+                icon: Target,
                 isCurrency: true,
               }
               const IconeMetrica = metricaInfo.icon || Target

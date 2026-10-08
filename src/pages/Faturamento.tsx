@@ -21,7 +21,7 @@ import {
 import { faturasService } from '@/services/faturas'
 import { clientesService } from '@/services/clientes'
 import { contratosService } from '@/services/contratos'
-import { formatCurrency, formatMonthYear, formatDate } from '@/lib/formatters'
+import { formatCurrency, formatMonthYear, formatDate, formatDateTime } from '@/lib/formatters'
 import { useAuth } from '@/context/AuthContext'
 import { useToast } from '@/hooks/use-toast'
 import { useRealtime } from '@/hooks/use-realtime'
@@ -48,8 +48,15 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { coraService } from '@/services/cora'
-import { formatCurrency, formatDate, formatMonthYear, formatDateTime } from '@/lib/formatters'
-import type { Fatura, Cliente, Contrato, ConfiguracoesEmpresa, Equipamento } from '@/types'
+import type {
+  Fatura,
+  Cliente,
+  Contrato,
+  ConfiguracoesEmpresa,
+  Equipamento,
+  IntegracaoCoraConfig,
+  CobrancaBoleto,
+} from '@/types'
 import { Mail, Send, CreditCard } from 'lucide-react'
 
 export default function Faturamento() {

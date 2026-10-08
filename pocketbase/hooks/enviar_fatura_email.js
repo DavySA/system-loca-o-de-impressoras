@@ -162,9 +162,10 @@ routerAdd(
       mailClient.send(msg)
     } catch (mailErr) {
       console.error('Falha ao disparar e-mail de fatura via PocketBase MailClient:', mailErr)
+      const errDetail = mailErr ? mailErr.message || String(mailErr) : ''
       throw new BadRequestError(
-        'Não foi possível disparar o e-mail: ' +
-          (mailErr.message || 'Erro no serviço de e-mail do servidor.'),
+        'Servidor de e-mail (SMTP) não configurado ou indisponível. Detalhes: ' +
+          (errDetail || 'Serviço de e-mail não configurado nas configurações do servidor.'),
       )
     }
 

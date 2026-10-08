@@ -1,4 +1,4 @@
-import { pb } from '@/lib/pocketbase/client'
+import pb from '@/lib/pocketbase/client'
 import type { MetaColaborador, PeriodoMeta, MetricaMeta, StatusMeta, AppUser } from '@/types'
 
 export interface ProgressoMetaCalculado {

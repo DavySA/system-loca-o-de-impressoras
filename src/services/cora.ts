@@ -1,4 +1,4 @@
-import { pb } from '@/lib/pocketbase/client'
+import pb from '@/lib/pocketbase/client'
 import type { IntegracaoCoraConfig, CobrancaBoleto } from '@/types'
 
 export const coraService = {

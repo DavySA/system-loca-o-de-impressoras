@@ -734,6 +734,9 @@ export default function Dashboard() {
           )}
         </CardContent>
       </Card>
+
+      {/* Painel de Desempenho da Equipe por Operador & Técnico (Exclusivo Administrador) */}
+      {user?.role === 'administrador' && <DashboardDesempenhoEquipe />}
     </div>
   )
 }

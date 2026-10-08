@@ -22,6 +22,7 @@ import Servicos from './pages/Servicos'
 import Relatorios from './pages/Relatorios'
 import Suprimentos from './pages/Suprimentos'
 import GraficaRapida from './pages/GraficaRapida'
+import ComissoesMetas from './pages/ComissoesMetas'
 import Usuarios from './pages/Usuarios'
 import Personalizar from './pages/Personalizar'
 import NotFound from './pages/NotFound'
@@ -111,6 +112,18 @@ export function App() {
             }
           >
             <Route path="/grafica-rapida" element={<GraficaRapida />} />
+          </Route>
+
+          {/* Comissões & Metas */}
+          <Route
+            element={
+              <ProtectedRoute
+                requiredModulo="comissoes_metas"
+                allowedRoles={['administrador', 'operador', 'tecnico']}
+              />
+            }
+          >
+            <Route path="/comissoes-metas" element={<ComissoesMetas />} />
           </Route>
 
           {/* Catálogo de Serviços */}
