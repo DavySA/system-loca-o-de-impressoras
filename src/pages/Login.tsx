@@ -41,13 +41,11 @@ export default function Login() {
           <div className="w-20 h-16 mb-2 flex items-center justify-center">
             <img
               src={defaultLogo}
-              alt="TD Technology System"
+              alt="STD"
               className="max-h-16 w-auto object-contain drop-shadow-sm"
             />
           </div>
-          <h1 className="text-xl font-bold text-gray-900 tracking-tight">
-            TD Technology System ERP
-          </h1>
+          <h1 className="text-2xl font-bold text-gray-900 tracking-tight">STD</h1>
           <p className="text-xs text-gray-500 mt-1 uppercase tracking-wider font-semibold">
             Gestão de Locação e Outsourcing
           </p>

@@ -63,7 +63,7 @@ export function CaixaCupomRelatorio({
           <img src={logoSrc} alt="Logo" className="max-h-12 max-w-[120px] object-contain" />
         </div>
         <h1 className="font-bold text-xs uppercase tracking-tight text-gray-900">
-          {configEmpresa?.razao_social || 'TD Technology System ERP'}
+          {configEmpresa?.razao_social || 'STD'}
         </h1>
         {configEmpresa?.nome_fantasia && (
           <p className="text-[10px] text-gray-700">{configEmpresa.nome_fantasia}</p>
@@ -458,7 +458,7 @@ export function CaixaCupomRelatorio({
         </p>
         <p className="text-[9px] text-gray-500">Responsável pelo Fechamento do Caixa</p>
         <p className="text-[8.5px] text-gray-400 pt-2 border-t border-gray-200">
-          TD Technology System ERP • Impresso em {formatDateTime(new Date().toISOString())}
+          STD • Impresso em {formatDateTime(new Date().toISOString())}
         </p>
       </div>
     </div>

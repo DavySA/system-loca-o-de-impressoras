@@ -1,7 +1,48 @@
 import pb from '@/lib/pocketbase/client'
-import type { GraficaProduto, GraficaCaixa, GraficaCaixaContador, GraficaVenda } from '@/types'
+import type {
+  GraficaProduto,
+  GraficaCaixa,
+  GraficaCaixaContador,
+  GraficaVenda,
+  GraficaConfiguracao,
+} from '@/types'
 
 export const graficaService = {
+  // --------------------------------------------------------------------------
+  // 0. Configuração do Ambiente da Gráfica (Lotação de Equipamentos)
+  // --------------------------------------------------------------------------
+  async getConfiguracao(): Promise<GraficaConfiguracao | null> {
+    try {
+      const records = await pb
+        .collection('grafica_configuracao')
+        .getList<GraficaConfiguracao>(1, 1, {
+          sort: '-created',
+          expand: 'equipamentos_lotados_ids',
+        })
+      return records.items[0] || null
+    } catch {
+      return null
+    }
+  },
+
+  async salvarConfiguracao(data: {
+    equipamentos_lotados_ids: string[]
+    observacoes?: string
+  }): Promise<GraficaConfiguracao> {
+    const existing = await this.getConfiguracao()
+    if (existing) {
+      return pb.collection('grafica_configuracao').update<GraficaConfiguracao>(existing.id, {
+        equipamentos_lotados_ids: data.equipamentos_lotados_ids,
+        observacoes: data.observacoes || '',
+      })
+    } else {
+      return pb.collection('grafica_configuracao').create<GraficaConfiguracao>({
+        equipamentos_lotados_ids: data.equipamentos_lotados_ids,
+        observacoes: data.observacoes || '',
+      })
+    }
+  },
+
   // --------------------------------------------------------------------------
   // 1. Produtos / Insumos de Papel / Adesivos / Serviços
   // --------------------------------------------------------------------------
@@ -38,7 +79,7 @@ export const graficaService = {
     return pb.collection('grafica_caixas').getFullList<GraficaCaixa>({
       filter: filter || '',
       sort: '-data,-created',
-      expand: 'equipamento_id',
+      expand: 'equipamento_id,equipamentos_ids',
     })
   },
 
@@ -47,7 +88,7 @@ export const graficaService = {
       const records = await pb.collection('grafica_caixas').getList<GraficaCaixa>(1, 1, {
         filter: 'status = "aberto"',
         sort: '-data_abertura',
-        expand: 'equipamento_id',
+        expand: 'equipamento_id,equipamentos_ids',
       })
       return records.items[0] || null
     } catch {
@@ -57,8 +98,64 @@ export const graficaService = {
 
   async getCaixaById(id: string): Promise<GraficaCaixa> {
     return pb.collection('grafica_caixas').getOne<GraficaCaixa>(id, {
-      expand: 'equipamento_id',
+      expand: 'equipamento_id,equipamentos_ids',
     })
+  },
+
+  // Busca os contadores do último fechamento de um equipamento (seja pelo campo legado ou por grafica_caixa_contadores)
+  async getUltimosContadoresEquipamento(equipamentoId: string): Promise<{
+    mono: number
+    color: number
+    copias: number
+    scanner: number
+    total: number
+  }> {
+    // 1. Tenta buscar em grafica_caixa_contadores vinculada a um caixa fechado
+    try {
+      const contadores = await pb
+        .collection('grafica_caixa_contadores')
+        .getList<GraficaCaixaContador>(1, 1, {
+          filter: `equipamento_id = "${equipamentoId}" && caixa_id.status = "fechado"`,
+          sort: '-created',
+        })
+      if (contadores.items.length > 0) {
+        const c = contadores.items[0]
+        const mono = c.fechamento_mono ?? c.abertura_mono ?? 0
+        const color = c.fechamento_color ?? c.abertura_color ?? 0
+        const copias = c.fechamento_copias ?? c.abertura_copias ?? 0
+        const scanner = c.fechamento_scanner ?? c.abertura_scanner ?? 0
+        const total = c.fechamento_total ?? mono + color
+        return { mono, color, copias, scanner, total }
+      }
+    } catch {
+      /* fallback */
+    }
+
+    // 2. Tenta buscar pelo caixa legado onde equipamento_id era o principal
+    try {
+      const records = await pb.collection('grafica_caixas').getList<GraficaCaixa>(1, 1, {
+        filter: `equipamento_id = "${equipamentoId}" && status = "fechado"`,
+        sort: '-data_fechamento,-created',
+      })
+      if (records.items.length > 0) {
+        const cx = records.items[0]
+        const mono = cx.contador_fechamento_mono ?? cx.contador_abertura_mono ?? 0
+        const color = cx.contador_fechamento_color ?? cx.contador_abertura_color ?? 0
+        return { mono, color, copias: 0, scanner: 0, total: mono + color }
+      }
+    } catch {
+      /* fallback */
+    }
+
+    // 3. Fallback: contadores atuais do cadastro do equipamento
+    try {
+      const eq = await pb.collection('equipamentos').getOne(equipamentoId)
+      const mono = eq.contador_monocromatico || 0
+      const color = eq.contador_colorido || 0
+      return { mono, color, copias: 0, scanner: 0, total: mono + color }
+    } catch {
+      return { mono: 0, color: 0, copias: 0, scanner: 0, total: 0 }
+    }
   },
 
   async getUltimoCaixaFechadoPorEquipamento(equipamentoId: string): Promise<GraficaCaixa | null> {
@@ -78,6 +175,7 @@ export const graficaService = {
     operador_user_id?: string
     saldo_inicial: number
     equipamento_id?: string
+    equipamentos_ids?: string[]
     contador_anterior_mono?: number
     contador_anterior_color?: number
     contador_abertura_mono?: number
@@ -93,13 +191,17 @@ export const graficaService = {
     }[]
   }): Promise<GraficaCaixa> {
     const hojeStr = new Date().toISOString()
+    const equipsIds = data.equipamentos_ids || (data.equipamento_id ? [data.equipamento_id] : [])
+    const principalId = data.equipamento_id || equipsIds[0] || undefined
+
     const novoCaixa = await pb.collection('grafica_caixas').create<GraficaCaixa>({
       data: hojeStr,
       operador: data.operador,
       operador_user_id: data.operador_user_id || undefined,
       status: 'aberto',
       data_abertura: hojeStr,
-      equipamento_id: data.equipamento_id || undefined,
+      equipamento_id: principalId,
+      equipamentos_ids: equipsIds,
       saldo_inicial: Number(data.saldo_inicial) || 0,
       total_entradas: 0,
       total_custo_insumos: 0,
@@ -111,7 +213,7 @@ export const graficaService = {
       observacoes_abertura: data.observacoes_abertura || '',
     })
 
-    // Gravar contadores iniciais de cada impressora da gráfica
+    // Gravar contadores iniciais de cada impressora selecionada para o caixa
     if (data.contadoresIniciais && data.contadoresIniciais.length > 0) {
       for (const cnt of data.contadoresIniciais) {
         await pb.collection('grafica_caixa_contadores').create({
@@ -121,7 +223,9 @@ export const graficaService = {
           abertura_color: Number(cnt.abertura_color) || 0,
           abertura_copias: Number(cnt.abertura_copias) || 0,
           abertura_scanner: Number(cnt.abertura_scanner) || 0,
-          abertura_total: Number(cnt.abertura_total) || 0,
+          abertura_total:
+            Number(cnt.abertura_total) ||
+            (Number(cnt.abertura_mono) || 0) + (Number(cnt.abertura_color) || 0),
         })
       }
     }
@@ -159,27 +263,24 @@ export const graficaService = {
         ? data.saldo_final_dinheiro
         : (caixaAtual.saldo_inicial || 0) + totalEntradas
 
-    const fMonoPrincipal =
-      data.contador_fechamento_mono !== undefined
-        ? Number(data.contador_fechamento_mono)
-        : Number(caixaAtual.contador_abertura_mono || 0)
-    const fColorPrincipal =
-      data.contador_fechamento_color !== undefined
-        ? Number(data.contador_fechamento_color)
-        : Number(caixaAtual.contador_abertura_color || 0)
+    // Apuração acumulada de todos os equipamentos
+    let somaDeltaMonoTotal = 0
+    let somaDeltaColorTotal = 0
 
-    const prodMono = Math.max(0, fMonoPrincipal - (caixaAtual.contador_abertura_mono || 0))
-    const prodColor = Math.max(0, fColorPrincipal - (caixaAtual.contador_abertura_color || 0))
-
-    // Atualizar contadores finais e calcular deltas
-    if (data.contadoresFinais) {
+    // Atualizar contadores finais e calcular deltas de cada equipamento do caixa
+    if (data.contadoresFinais && data.contadoresFinais.length > 0) {
       for (const finalCnt of data.contadoresFinais) {
         let contadorRecord: GraficaCaixaContador | null = null
         if (finalCnt.contador_id) {
-          contadorRecord = await pb
-            .collection('grafica_caixa_contadores')
-            .getOne<GraficaCaixaContador>(finalCnt.contador_id)
-        } else {
+          try {
+            contadorRecord = await pb
+              .collection('grafica_caixa_contadores')
+              .getOne<GraficaCaixaContador>(finalCnt.contador_id)
+          } catch {
+            contadorRecord = null
+          }
+        }
+        if (!contadorRecord) {
           const list = await pb
             .collection('grafica_caixa_contadores')
             .getList<GraficaCaixaContador>(1, 1, {
@@ -206,6 +307,9 @@ export const graficaService = {
         const deltaScan = Math.max(0, fScan - abScan)
         const deltaTotal = Math.max(0, fTotal - abTotal)
 
+        somaDeltaMonoTotal += deltaMono
+        somaDeltaColorTotal += deltaColor
+
         if (contadorRecord) {
           await pb.collection('grafica_caixa_contadores').update(contadorRecord.id, {
             fechamento_mono: fMono,
@@ -223,6 +327,11 @@ export const graficaService = {
           await pb.collection('grafica_caixa_contadores').create({
             caixa_id: caixaId,
             equipamento_id: finalCnt.equipamento_id,
+            abertura_mono: abMono,
+            abertura_color: abColor,
+            abertura_copias: abCopias,
+            abertura_scanner: abScan,
+            abertura_total: abTotal,
             fechamento_mono: fMono,
             fechamento_color: fColor,
             fechamento_copias: fCopias,
@@ -235,20 +344,37 @@ export const graficaService = {
             delta_total: deltaTotal,
           })
         }
+
+        // Atualizar também o contador do equipamento individual no módulo Equipamentos
+        try {
+          await pb.collection('equipamentos').update(finalCnt.equipamento_id, {
+            contador_monocromatico: fMono,
+            contador_colorido: fColor,
+          })
+        } catch (errEq) {
+          console.warn('Aviso ao sincronizar contadores do equipamento:', errEq)
+        }
       }
     }
 
-    // Se houver equipamento vinculado no caixa, atualizar os contadores do equipamento com o fechamento
-    if (caixaAtual.equipamento_id) {
-      try {
-        await pb.collection('equipamentos').update(caixaAtual.equipamento_id, {
-          contador_monocromatico: fMonoPrincipal,
-          contador_colorido: fColorPrincipal,
-        })
-      } catch (errEq) {
-        console.warn('Erro ao sincronizar contador do equipamento no fechamento:', errEq)
-      }
-    }
+    // Contadores principais do registro do caixa (legado e compatibilidade)
+    const fMonoPrincipal =
+      data.contador_fechamento_mono !== undefined
+        ? Number(data.contador_fechamento_mono)
+        : Number(caixaAtual.contador_abertura_mono || 0)
+    const fColorPrincipal =
+      data.contador_fechamento_color !== undefined
+        ? Number(data.contador_fechamento_color)
+        : Number(caixaAtual.contador_abertura_color || 0)
+
+    const prodMono =
+      somaDeltaMonoTotal > 0
+        ? somaDeltaMonoTotal
+        : Math.max(0, fMonoPrincipal - (caixaAtual.contador_abertura_mono || 0))
+    const prodColor =
+      somaDeltaColorTotal > 0
+        ? somaDeltaColorTotal
+        : Math.max(0, fColorPrincipal - (caixaAtual.contador_abertura_color || 0))
 
     const agora = new Date().toISOString()
     return pb.collection('grafica_caixas').update<GraficaCaixa>(caixaId, {

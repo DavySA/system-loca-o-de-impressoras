@@ -650,7 +650,7 @@ export default function Faturamento() {
       <html lang="pt-BR">
         <head>
           <meta charset="utf-8" />
-          <title>Fatura ${selectedFatura.id.slice(0, 8).toUpperCase()} - TD Technology System ERP</title>
+          <title>Fatura ${selectedFatura.id.slice(0, 8).toUpperCase()} - STD</title>
           <script src="https://cdn.tailwindcss.com"></script>
           <style>
             @page { size: A4; margin: 15mm; }
@@ -781,7 +781,7 @@ export default function Faturamento() {
 
             <!-- Rodapé da Empresa -->
             <div class="border-t border-gray-200 pt-4 text-center text-gray-500 text-[10.5px]">
-              <p class="font-semibold text-gray-700">${configEmpresa?.mensagem_rodape || 'TD Technology System ERP — Eficiência, qualidade e tecnologia em outsourcing de impressão.'}</p>
+              <p class="font-semibold text-gray-700">${configEmpresa?.mensagem_rodape || 'STD — Eficiência, qualidade e tecnologia em outsourcing de impressão.'}</p>
               <p class="text-[9px] text-gray-400 mt-0.5">Emitido em ${new Date().toLocaleDateString('pt-BR')} às ${new Date().toLocaleTimeString('pt-BR')}</p>
             </div>
           </div>
@@ -1583,7 +1583,7 @@ export default function Faturamento() {
                   )}
                   <div>
                     <h2 className="text-lg font-bold uppercase text-gray-900">
-                      {configEmpresa?.razao_social || 'TD Technology System ERP'}
+                      {configEmpresa?.razao_social || 'STD'}
                     </h2>
                     {configEmpresa?.nome_fantasia && (
                       <p className="text-xs text-gray-600">{configEmpresa.nome_fantasia}</p>

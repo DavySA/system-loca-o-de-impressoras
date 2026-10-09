@@ -479,7 +479,7 @@ export default function OrdemServicoDetalhe() {
             )}
             <div>
               <h2 className="text-xl font-bold uppercase text-gray-900">
-                {configEmpresa?.razao_social || 'PrintGest Locações'}
+                {configEmpresa?.razao_social || 'STD'}
               </h2>
               {configEmpresa?.nome_fantasia && (
                 <p className="text-xs text-gray-600">{configEmpresa.nome_fantasia}</p>
@@ -877,7 +877,7 @@ export default function OrdemServicoDetalhe() {
             <p className="font-semibold text-gray-900">
               {ordem.tecnico_responsavel || 'Técnico Autorizado'}
             </p>
-            <p className="text-[11px] text-gray-500">Técnico TD Technology System ERP</p>
+            <p className="text-[11px] text-gray-500">Técnico STD</p>
           </div>
         </div>
 

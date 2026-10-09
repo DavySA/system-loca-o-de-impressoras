@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-08T01:45:33.024Z",
+  "generatedAt": "2026-10-09T02:24:47.549Z",
   "collections": [
     {
       "name": "users",
@@ -1355,6 +1355,13 @@
           "required": false,
           "system": false,
           "collectionRef": "users"
+        },
+        {
+          "name": "equipamentos_ids",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "equipamentos"
         }
       ],
       "indexes": [
@@ -1925,6 +1932,47 @@
         "CREATE INDEX idx_metas_user ON metas (user_id)",
         "CREATE INDEX idx_metas_status ON metas (status)"
       ]
+    },
+    {
+      "name": "grafica_configuracao",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "@request.auth.id != '' && @request.auth.role = 'administrador'",
+        "update": "@request.auth.id != '' && @request.auth.role = 'administrador'",
+        "delete": "@request.auth.id != '' && @request.auth.role = 'administrador'"
+      },
+      "fields": [
+        {
+          "name": "equipamentos_lotados_ids",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "equipamentos"
+        },
+        {
+          "name": "observacoes",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": []
     }
   ]
 }

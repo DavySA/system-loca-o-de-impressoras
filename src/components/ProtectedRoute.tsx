@@ -19,9 +19,7 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ allowedRoles, re
     return (
       <div className="min-h-screen bg-[#F6F7F9] flex flex-col items-center justify-center">
         <div className="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-        <p className="mt-4 text-sm text-gray-600 font-medium">
-          Carregando TD Technology System ERP...
-        </p>
+        <p className="mt-4 text-sm text-gray-600 font-medium">Carregando STD...</p>
       </div>
     )
   }

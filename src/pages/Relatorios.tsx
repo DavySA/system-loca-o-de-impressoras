@@ -393,7 +393,7 @@ export default function Relatorios() {
       <html lang="pt-BR">
         <head>
           <meta charset="utf-8" />
-          <title>Relatório Mensal - TD Technology System ERP</title>
+          <title>Relatório Mensal - STD</title>
           <script src="https://cdn.tailwindcss.com"></script>
           <style>
             @page { size: A4 portrait; margin: 12mm 15mm; }
@@ -411,7 +411,7 @@ export default function Relatorios() {
                 ${logoUrl ? `<img src="${logoUrl}" class="h-12 max-w-[140px] object-contain" />` : ''}
                 <div>
                   <h1 class="text-sm font-bold uppercase text-gray-900">${configEmpresa?.razao_social || 'TD Technology System Soluções LTDA'}</h1>
-                  <p class="text-[10px] text-gray-600">${configEmpresa?.nome_fantasia || 'TD Technology System ERP'} • CNPJ: ${configEmpresa?.cnpj || '-'}</p>
+                  <p class="text-[10px] text-gray-600">${configEmpresa?.nome_fantasia || 'STD'} • CNPJ: ${configEmpresa?.cnpj || '-'}</p>
                   <p class="text-[10px] text-gray-500">${configEmpresa?.endereco || ''} ${configEmpresa?.cidade ? `• ${configEmpresa.cidade}/${configEmpresa.uf}` : ''} • Tel: ${configEmpresa?.telefone || '-'}</p>
                 </div>
               </div>
@@ -427,7 +427,7 @@ export default function Relatorios() {
 
             <!-- Rodapé -->
             <div class="border-t border-gray-200 pt-3 text-center text-[9.5px] text-gray-500 mt-6">
-              <p>${configEmpresa?.mensagem_rodape || 'TD Technology System ERP — Eficiência, qualidade e tecnologia em outsourcing de impressão.'}</p>
+              <p>${configEmpresa?.mensagem_rodape || 'STD — Eficiência, qualidade e tecnologia em outsourcing de impressão.'}</p>
               <p class="text-[8.5px] text-gray-400 mt-0.5">Emitido eletronicamente em ${new Date().toLocaleDateString('pt-BR')} às ${new Date().toLocaleTimeString('pt-BR')}</p>
             </div>
           </div>

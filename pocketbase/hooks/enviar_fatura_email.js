@@ -51,7 +51,7 @@ routerAdd(
     }
 
     // 3. Buscar dados institucionais da empresa emissora
-    let empresaNome = 'TD Technology System ERP'
+    let empresaNome = 'STD'
     let empresaTelefone = '(11) 3322-1100'
     let empresaEmail = 'financeiro@tdtechnology.com.br'
     let empresaCnpj = ''
@@ -140,7 +140,7 @@ routerAdd(
         <div class="footer">
           <p style="margin: 0;"><strong>${empresaNome}</strong> ${empresaCnpj ? '• CNPJ: ' + empresaCnpj : ''}</p>
           <p style="margin: 4px 0 0;">Telefone: ${empresaTelefone} • E-mail: ${empresaEmail}</p>
-          <p style="margin: 8px 0 0; color: #9ca3af;">Mensagem gerada e enviada automaticamente via TD Technology System ERP.</p>
+          <p style="margin: 8px 0 0; color: #9ca3af;">Mensagem gerada e enviada automaticamente via STD.</p>
         </div>
       </div>
     </body>

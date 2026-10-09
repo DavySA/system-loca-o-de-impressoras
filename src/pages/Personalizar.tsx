@@ -260,7 +260,7 @@ export default function Personalizar() {
                         onChange={(e) =>
                           setFormData({ ...formData, nome_fantasia: e.target.value })
                         }
-                        placeholder="Ex: TD Technology System ERP"
+                        placeholder="Ex: STD"
                       />
                     </div>
 
@@ -425,7 +425,7 @@ export default function Personalizar() {
                       onChange={(e) =>
                         setFormData({ ...formData, mensagem_rodape: e.target.value })
                       }
-                      placeholder="Ex: TD Technology System ERP — Eficiência, qualidade e tecnologia em outsourcing de impressão."
+                      placeholder="Ex: STD — Eficiência, qualidade e tecnologia em outsourcing de impressão."
                     />
                   </div>
 
@@ -542,9 +542,7 @@ export default function Personalizar() {
                 <CardContent className="space-y-3">
                   <div className="p-3 bg-gray-50 border border-gray-200 rounded-lg text-xs space-y-2 text-gray-600">
                     <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-200 pb-2">
-                      <span className="font-semibold text-gray-800">
-                        © 2025 TD Technology System ERP
-                      </span>
+                      <span className="font-semibold text-gray-800">© 2025 STD</span>
                       <span className="text-[11px] text-blue-600 font-mono">
                         {formData.website || 'tdtechnology.com.br'}
                       </span>

@@ -48,7 +48,7 @@ export function CaixaPrintDialog({
       <html lang="pt-BR">
         <head>
           <meta charset="utf-8" />
-          <title>Cupom Fechamento Caixa #${caixa.id.slice(0, 8).toUpperCase()} - TD Technology System ERP</title>
+          <title>Cupom Fechamento Caixa #${caixa.id.slice(0, 8).toUpperCase()} - STD</title>
           <script src="https://cdn.tailwindcss.com"></script>
           <style>
             @page {

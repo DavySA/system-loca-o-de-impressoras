@@ -43,7 +43,7 @@ export function OrdemServicoPrintDialog({
       <html lang="pt-BR">
         <head>
           <meta charset="utf-8" />
-          <title>Ordem de Serviço ${formatOSCode(ordem.id)} - TD Technology System ERP</title>
+          <title>Ordem de Serviço ${formatOSCode(ordem.id)} - STD</title>
           <script src="https://cdn.tailwindcss.com"></script>
           <style>
             @page {

@@ -352,6 +352,17 @@ export interface GraficaProduto {
   }
 }
 
+export interface GraficaConfiguracao {
+  id: string
+  equipamentos_lotados_ids: string[]
+  observacoes?: string
+  created: string
+  updated: string
+  expand?: {
+    equipamentos_lotados_ids?: Equipamento[]
+  }
+}
+
 export interface GraficaCaixa {
   id: string
   data: string
@@ -361,6 +372,7 @@ export interface GraficaCaixa {
   data_abertura: string
   data_fechamento?: string
   equipamento_id?: string
+  equipamentos_ids?: string[]
   saldo_inicial?: number
   total_entradas?: number
   total_custo_insumos?: number
@@ -380,6 +392,7 @@ export interface GraficaCaixa {
   updated: string
   expand?: {
     equipamento_id?: Equipamento
+    equipamentos_ids?: Equipamento[]
     operador_user_id?: AppUser
   }
 }

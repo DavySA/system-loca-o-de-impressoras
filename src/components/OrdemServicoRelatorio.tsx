@@ -39,13 +39,13 @@ export function OrdemServicoRelatorio({
           <div className="w-24 h-16 flex items-center justify-center shrink-0">
             <img
               src={logoSrc}
-              alt={configEmpresa?.razao_social || 'TD Technology System ERP'}
+              alt={configEmpresa?.razao_social || 'STD'}
               className="max-h-16 max-w-[140px] object-contain"
             />
           </div>
           <div>
             <h1 className="text-base font-bold text-gray-900 uppercase tracking-tight">
-              {configEmpresa?.razao_social || 'TD Technology System Soluções em Outsourcing LTDA'}
+              {configEmpresa?.razao_social || 'STD - Gestão de Locação e Outsourcing'}
             </h1>
             {configEmpresa?.nome_fantasia && (
               <p className="text-[11px] font-semibold text-gray-700">
@@ -267,9 +267,7 @@ export function OrdemServicoRelatorio({
             <p className="text-[11px] font-bold text-gray-900 mt-1.5 uppercase">
               {ordem.tecnico_responsavel || 'Técnico Responsável'}
             </p>
-            <p className="text-[10px] text-gray-500">
-              Técnico Autorizado — TD Technology System ERP
-            </p>
+            <p className="text-[10px] text-gray-500">Técnico Autorizado — STD</p>
             <p className="text-[9.5px] text-gray-400 mt-0.5">Data: _____/_____/_________</p>
           </div>
 
@@ -304,11 +302,10 @@ export function OrdemServicoRelatorio({
       <footer className="text-center text-[10px] text-gray-500 border-t border-gray-200 pt-3 space-y-1">
         <p className="font-semibold text-gray-700">
           {configEmpresa?.mensagem_rodape ||
-            'TD Technology System ERP — Eficiência, qualidade e tecnologia em outsourcing de impressão.'}
+            'STD — Eficiência, qualidade e tecnologia em outsourcing de impressão.'}
         </p>
         <p className="text-[9px] text-gray-400">
-          Documento emitido eletronicamente via TD Technology System ERP em{' '}
-          {formatDateTime(new Date().toISOString())}
+          Documento emitido eletronicamente via STD em {formatDateTime(new Date().toISOString())}
         </p>
       </footer>
     </div>

@@ -20,6 +20,9 @@ import {
   Search,
   ArrowRight,
   Filter,
+  Sliders,
+  CheckSquare,
+  Square,
 } from 'lucide-react'
 import { graficaService } from '@/services/grafica'
 import { equipamentosService } from '@/services/equipamentos'
@@ -66,9 +69,9 @@ export default function GraficaRapida() {
   const { user } = useAuth()
   const { toast } = useToast()
 
-  const [activeTab, setActiveTab] = useState<'caixa' | 'vendas' | 'produtos' | 'relatorios'>(
-    'caixa',
-  )
+  const [activeTab, setActiveTab] = useState<
+    'caixa' | 'vendas' | 'produtos' | 'relatorios' | 'configuracao'
+  >('caixa')
   const [isLoading, setIsLoading] = useState(true)
 
   // Dados centrais
@@ -84,6 +87,11 @@ export default function GraficaRapida() {
   // Configuração da Empresa para cabeçalho
   const [configEmpresa, setConfigEmpresa] = useState<ConfiguracoesEmpresa | null>(null)
 
+  // Configuração de Lotação de Equipamentos na Gráfica Rápida
+  const [equipamentosLotadosIds, setEquipamentosLotadosIds] = useState<string[]>([])
+  const [obsLotacao, setObsLotacao] = useState<string>('')
+  const [isSalvandoLotacao, setIsSalvandoLotacao] = useState(false)
+
   // Modais
   const [isModalAbrirCaixaOpen, setIsModalAbrirCaixaOpen] = useState(false)
   const [isModalFecharCaixaOpen, setIsModalFecharCaixaOpen] = useState(false)
@@ -94,18 +102,21 @@ export default function GraficaRapida() {
   const [vendasImpressao, setVendasImpressao] = useState<GraficaVenda[]>([])
   const [isModalImprimirCaixaOpen, setIsModalImprimirCaixaOpen] = useState(false)
 
-  // Formulário Abertura de Caixa
-  const [equipamentoSelecionadoCaixa, setEquipamentoSelecionadoCaixa] = useState<string>('')
-  const [contadorAnteriorMono, setContadorAnteriorMono] = useState<number>(0)
-  const [contadorAnteriorColor, setContadorAnteriorColor] = useState<number>(0)
-  const [contadorAberturaMono, setContadorAberturaMono] = useState<number>(0)
-  const [contadorAberturaColor, setContadorAberturaColor] = useState<number>(0)
+  // Formulário Abertura de Caixa (Multi-Equipamento)
+  const [equipamentosSelecionadosAbertura, setEquipamentosSelecionadosAbertura] = useState<
+    string[]
+  >([])
   const [saldoInicialCaixa, setSaldoInicialCaixa] = useState<number>(0)
   const [obsAbertura, setObsAbertura] = useState<string>('')
   const [contadoresAbertura, setContadoresAbertura] = useState<
     Record<
       string,
       {
+        antMono: number
+        antColor: number
+        antCopias: number
+        antScanner: number
+        antTotal: number
         mono: number
         color: number
         copias: number
@@ -115,16 +126,19 @@ export default function GraficaRapida() {
     >
   >({})
 
-  // Formulário Fechamento de Caixa
+  // Formulário Fechamento de Caixa (Multi-Equipamento)
   const [saldoFinalDinheiro, setSaldoFinalDinheiro] = useState<number>(0)
-  const [contadorFechamentoMono, setContadorFechamentoMono] = useState<number>(0)
-  const [contadorFechamentoColor, setContadorFechamentoColor] = useState<number>(0)
   const [obsFechamento, setObsFechamento] = useState<string>('')
   const [contadoresFechamento, setContadoresFechamento] = useState<
     Record<
       string,
       {
         contador_id?: string
+        abertura_mono: number
+        abertura_color: number
+        abertura_copias: number
+        abertura_scanner: number
+        abertura_total: number
         mono: number
         color: number
         copias: number
@@ -171,7 +185,7 @@ export default function GraficaRapida() {
   const loadData = async () => {
     try {
       setIsLoading(true)
-      const [prods, equips, sups, cxAberto, caixas, vendas, cfg] = await Promise.all([
+      const [prods, equips, sups, cxAberto, caixas, vendas, cfg, grafCfg] = await Promise.all([
         graficaService.getProdutos(),
         equipamentosService.getAll(),
         suprimentosService.getAll(),
@@ -179,6 +193,7 @@ export default function GraficaRapida() {
         graficaService.getCaixas(),
         graficaService.getVendas(),
         configuracoesService.get(),
+        graficaService.getConfiguracao(),
       ])
 
       setProdutos(prods)
@@ -188,6 +203,15 @@ export default function GraficaRapida() {
       setHistoricoCaixas(caixas)
       setTodasVendas(vendas)
       if (cfg) setConfigEmpresa(cfg)
+
+      if (grafCfg) {
+        setEquipamentosLotadosIds(grafCfg.equipamentos_lotados_ids || [])
+        setObsLotacao(grafCfg.observacoes || '')
+      } else {
+        // Fallback: se ainda não houver configuração, usar os equipamentos disponíveis
+        const ids = equips.map((e) => e.id)
+        setEquipamentosLotadosIds(ids)
+      }
 
       if (cxAberto) {
         const [cnts, vCaixa] = await Promise.all([
@@ -220,7 +244,9 @@ export default function GraficaRapida() {
   useRealtime('grafica_caixas', () => loadData())
   useRealtime('grafica_caixa_contadores', () => loadData())
   useRealtime('grafica_vendas', () => loadData())
+  useRealtime('grafica_configuracao', () => loadData())
   useRealtime('suprimentos', () => loadData())
+  useRealtime('equipamentos', () => loadData())
   useRealtime('configuracoes_empresa', () => {
     configuracoesService.get().then((cfg) => {
       if (cfg) setConfigEmpresa(cfg)
@@ -247,101 +273,149 @@ export default function GraficaRapida() {
     }
   }
 
-  // Iniciar contadores para abertura
+  // Lista de equipamentos lotados no ambiente da Gráfica Rápida
+  const equipamentosLotados = useMemo(() => {
+    if (equipamentosLotadosIds.length === 0) return equipamentos
+    return equipamentos.filter((eq) => equipamentosLotadosIds.includes(eq.id))
+  }, [equipamentos, equipamentosLotadosIds])
+
+  // Salvar configuração de lotação da Gráfica Rápida
+  const handleSalvarConfigLotacao = async () => {
+    try {
+      setIsSalvandoLotacao(true)
+      await graficaService.salvarConfiguracao({
+        equipamentos_lotados_ids: equipamentosLotadosIds,
+        observacoes: obsLotacao,
+      })
+      toast({
+        title: 'Lotação salva com sucesso!',
+        description: `${equipamentosLotadosIds.length} equipamento(s) lotado(s) no ambiente da gráfica.`,
+      })
+    } catch (err: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Erro ao salvar lotação',
+        description: err.message || 'Verifique as permissões de administrador.',
+      })
+    } finally {
+      setIsSalvandoLotacao(false)
+    }
+  }
+
+  const handleToggleEquipamentoLotado = (id: string) => {
+    setEquipamentosLotadosIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id],
+    )
+  }
+
+  // Iniciar contadores para abertura Multi-Equipamento
   const handleAbrirModalAbertura = async () => {
-    const initialMap: Record<string, any> = {}
-    equipamentos.forEach((eq) => {
-      const mono = eq.contador_monocromatico || 0
-      const color = eq.contador_colorido || 0
-      initialMap[eq.id] = {
-        mono,
-        color,
-        copias: Math.round(mono * 0.4),
-        scanner: 0,
-        total: mono + color,
-      }
-    })
-    setContadoresAbertura(initialMap)
+    // Equipamentos elegíveis: os lotados na gráfica (ou todos se nada configurado)
+    const elegiveis = equipamentosLotados.length > 0 ? equipamentosLotados : equipamentos
+    const elegiveisIds = elegiveis.map((e) => e.id)
+    setEquipamentosSelecionadosAbertura(elegiveisIds)
     setSaldoInicialCaixa(100)
     setObsAbertura('')
 
-    // Equipamento padrão: o primeiro da lista
-    const primeiroEquip = equipamentos[0]
-    if (primeiroEquip) {
-      setEquipamentoSelecionadoCaixa(primeiroEquip.id)
-      await handleTrocarEquipamentoAbertura(primeiroEquip.id, primeiroEquip)
-    } else {
-      setEquipamentoSelecionadoCaixa('')
-      setContadorAnteriorMono(0)
-      setContadorAnteriorColor(0)
-      setContadorAberturaMono(0)
-      setContadorAberturaColor(0)
+    // Buscar contadores do último fechamento de cada equipamento lotado
+    const initialMap: Record<string, any> = {}
+    for (const eq of elegiveis) {
+      const ultimos = await graficaService.getUltimosContadoresEquipamento(eq.id)
+      initialMap[eq.id] = {
+        antMono: ultimos.mono,
+        antColor: ultimos.color,
+        antCopias: ultimos.copias,
+        antScanner: ultimos.scanner,
+        antTotal: ultimos.total,
+        mono: ultimos.mono,
+        color: ultimos.color,
+        copias: ultimos.copias,
+        scanner: ultimos.scanner,
+        total: ultimos.total,
+      }
     }
-
+    setContadoresAbertura(initialMap)
     setIsModalAbrirCaixaOpen(true)
   }
 
-  const handleTrocarEquipamentoAbertura = async (equipId: string, eqParam?: Equipamento) => {
-    setEquipamentoSelecionadoCaixa(equipId)
-    const eq = eqParam || equipamentos.find((e) => e.id === equipId)
-    if (!eq) return
-
-    // Buscar o último caixa fechado desse equipamento para obter contadores de fechamento anteriores
-    try {
-      const ultimoFechado = await graficaService.getUltimoCaixaFechadoPorEquipamento(equipId)
-      const antMono = ultimoFechado?.contador_fechamento_mono ?? eq.contador_monocromatico ?? 0
-      const antColor = ultimoFechado?.contador_fechamento_color ?? eq.contador_colorido ?? 0
-      setContadorAnteriorMono(antMono)
-      setContadorAnteriorColor(antColor)
-      setContadorAberturaMono(antMono)
-      setContadorAberturaColor(antColor)
-    } catch {
-      const antMono = eq.contador_monocromatico || 0
-      const antColor = eq.contador_colorido || 0
-      setContadorAnteriorMono(antMono)
-      setContadorAnteriorColor(antColor)
-      setContadorAberturaMono(antMono)
-      setContadorAberturaColor(antColor)
+  const handleToggleEquipamentoAbertura = async (eqId: string) => {
+    const isSelected = equipamentosSelecionadosAbertura.includes(eqId)
+    if (isSelected) {
+      setEquipamentosSelecionadosAbertura((prev) => prev.filter((id) => id !== eqId))
+    } else {
+      setEquipamentosSelecionadosAbertura((prev) => [...prev, eqId])
+      if (!contadoresAbertura[eqId]) {
+        const ultimos = await graficaService.getUltimosContadoresEquipamento(eqId)
+        setContadoresAbertura((prev) => ({
+          ...prev,
+          [eqId]: {
+            antMono: ultimos.mono,
+            antColor: ultimos.color,
+            antCopias: ultimos.copias,
+            antScanner: ultimos.scanner,
+            antTotal: ultimos.total,
+            mono: ultimos.mono,
+            color: ultimos.color,
+            copias: ultimos.copias,
+            scanner: ultimos.scanner,
+            total: ultimos.total,
+          },
+        }))
+      }
     }
   }
 
   const handleConfirmarAberturaCaixa = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!equipamentoSelecionadoCaixa) {
+    if (equipamentosSelecionadosAbertura.length === 0) {
       toast({
         variant: 'destructive',
-        title: 'Equipamento obrigatório',
-        description: 'Selecione qual impressora da gráfica está em operação no caixa.',
+        title: 'Nenhum equipamento selecionado',
+        description: 'Selecione ao menos um equipamento em operação para abrir o caixa.',
       })
       return
     }
 
     try {
-      const contadoresIniciais = Object.entries(contadoresAbertura).map(([eqId, cnt]) => ({
-        equipamento_id: eqId,
-        abertura_mono: Number(cnt.mono) || 0,
-        abertura_color: Number(cnt.color) || 0,
-        abertura_copias: Number(cnt.copias) || 0,
-        abertura_scanner: Number(cnt.scanner) || 0,
-        abertura_total: Number(cnt.total) || Number(cnt.mono) + Number(cnt.color),
-      }))
+      const contadoresIniciais = equipamentosSelecionadosAbertura.map((eqId) => {
+        const cnt = contadoresAbertura[eqId] || {
+          mono: 0,
+          color: 0,
+          copias: 0,
+          scanner: 0,
+          total: 0,
+        }
+        return {
+          equipamento_id: eqId,
+          abertura_mono: Number(cnt.mono) || 0,
+          abertura_color: Number(cnt.color) || 0,
+          abertura_copias: Number(cnt.copias) || 0,
+          abertura_scanner: Number(cnt.scanner) || 0,
+          abertura_total: Number(cnt.total) || Number(cnt.mono) + Number(cnt.color),
+        }
+      })
+
+      // Equipamento principal (compatibilidade com histórico legado)
+      const primeiroEqId = equipamentosSelecionadosAbertura[0]
+      const primeiroCnt = contadoresAbertura[primeiroEqId]
 
       await graficaService.abrirCaixa({
         operador: user?.name || 'Operador do Caixa',
         operador_user_id: user?.id,
         saldo_inicial: Number(saldoInicialCaixa) || 0,
-        equipamento_id: equipamentoSelecionadoCaixa,
-        contador_anterior_mono: Number(contadorAnteriorMono) || 0,
-        contador_anterior_color: Number(contadorAnteriorColor) || 0,
-        contador_abertura_mono: Number(contadorAberturaMono) || 0,
-        contador_abertura_color: Number(contadorAberturaColor) || 0,
+        equipamento_id: primeiroEqId,
+        equipamentos_ids: equipamentosSelecionadosAbertura,
+        contador_anterior_mono: Number(primeiroCnt?.antMono) || 0,
+        contador_anterior_color: Number(primeiroCnt?.antColor) || 0,
+        contador_abertura_mono: Number(primeiroCnt?.mono) || 0,
+        contador_abertura_color: Number(primeiroCnt?.color) || 0,
         observacoes_abertura: obsAbertura,
         contadoresIniciais,
       })
 
       toast({
         title: 'Caixa aberto com sucesso!',
-        description: 'Equipamento e contadores iniciais registrados. Operação liberada.',
+        description: `${equipamentosSelecionadosAbertura.length} equipamento(s) e contadores iniciais registrados. Operação liberada.`,
       })
       setIsModalAbrirCaixaOpen(false)
       loadData()
@@ -354,13 +428,19 @@ export default function GraficaRapida() {
     }
   }
 
-  // Iniciar contadores para fechamento
+  // Iniciar contadores para fechamento Multi-Equipamento
   const handleAbrirModalFechamento = () => {
     if (!caixaAberto) return
     const finalMap: Record<string, any> = {}
+
     contadoresCaixaAberto.forEach((cnt) => {
       finalMap[cnt.equipamento_id] = {
         contador_id: cnt.id,
+        abertura_mono: cnt.abertura_mono || 0,
+        abertura_color: cnt.abertura_color || 0,
+        abertura_copias: cnt.abertura_copias || 0,
+        abertura_scanner: cnt.abertura_scanner || 0,
+        abertura_total: cnt.abertura_total || 0,
         mono: cnt.abertura_mono || 0,
         color: cnt.abertura_color || 0,
         copias: cnt.abertura_copias || 0,
@@ -368,11 +448,28 @@ export default function GraficaRapida() {
         total: cnt.abertura_total || 0,
       }
     })
+
+    // Caso o caixa legado tenha equipamento_id sem contadoresCaixaAberto
+    if (caixaAberto.equipamento_id && !finalMap[caixaAberto.equipamento_id]) {
+      finalMap[caixaAberto.equipamento_id] = {
+        abertura_mono: caixaAberto.contador_abertura_mono || 0,
+        abertura_color: caixaAberto.contador_abertura_color || 0,
+        abertura_copias: 0,
+        abertura_scanner: 0,
+        abertura_total:
+          (caixaAberto.contador_abertura_mono || 0) + (caixaAberto.contador_abertura_color || 0),
+        mono: caixaAberto.contador_abertura_mono || 0,
+        color: caixaAberto.contador_abertura_color || 0,
+        copias: 0,
+        scanner: 0,
+        total:
+          (caixaAberto.contador_abertura_mono || 0) + (caixaAberto.contador_abertura_color || 0),
+      }
+    }
+
     setContadoresFechamento(finalMap)
     const saldoSugerido = (caixaAberto.saldo_inicial || 0) + (caixaAberto.total_entradas || 0)
     setSaldoFinalDinheiro(saldoSugerido)
-    setContadorFechamentoMono(caixaAberto.contador_abertura_mono || 0)
-    setContadorFechamentoColor(caixaAberto.contador_abertura_color || 0)
     setObsFechamento('')
     setIsModalFecharCaixaOpen(true)
   }
@@ -391,17 +488,20 @@ export default function GraficaRapida() {
         fechamento_total: Number(cnt.total) || Number(cnt.mono) + Number(cnt.color),
       }))
 
+      // Compatibilidade legado: contadores do primeiro equipamento
+      const primeiro = contadoresFinais[0]
+
       await graficaService.fecharCaixa(caixaAberto.id, {
         saldo_final_dinheiro: Number(saldoFinalDinheiro),
-        contador_fechamento_mono: Number(contadorFechamentoMono),
-        contador_fechamento_color: Number(contadorFechamentoColor),
+        contador_fechamento_mono: primeiro ? Number(primeiro.fechamento_mono) : undefined,
+        contador_fechamento_color: primeiro ? Number(primeiro.fechamento_color) : undefined,
         observacoes_fechamento: obsFechamento,
         contadoresFinais,
       })
 
       toast({
         title: 'Caixa do dia fechado com sucesso!',
-        description: 'Os contadores foram gravados e são imutáveis após o fechamento.',
+        description: 'Os contadores de todos os equipamentos foram consolidados e são imutáveis.',
       })
       setIsModalFecharCaixaOpen(false)
       loadData()
@@ -647,7 +747,7 @@ export default function GraficaRapida() {
 
       {/* Tabs Principais da Gráfica Rápida */}
       <Tabs value={activeTab} onValueChange={(val: any) => setActiveTab(val)}>
-        <TabsList className="bg-gray-100 p-1">
+        <TabsList className="bg-gray-100 p-1 flex-wrap">
           <TabsTrigger value="caixa" className="text-xs flex items-center gap-1.5">
             <Receipt className="w-4 h-4" /> Operação do Caixa Diário
             {caixaAberto && <span className="w-2 h-2 rounded-full bg-emerald-500 ml-1" />}
@@ -661,6 +761,14 @@ export default function GraficaRapida() {
           <TabsTrigger value="relatorios" className="text-xs flex items-center gap-1.5">
             <FileSpreadsheet className="w-4 h-4" /> Fechamentos & Relatório de Lucro
           </TabsTrigger>
+          {user?.role === 'administrador' && (
+            <TabsTrigger value="configuracao" className="text-xs flex items-center gap-1.5">
+              <Sliders className="w-4 h-4" /> Equipamentos Lotados
+              <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-blue-100 text-blue-700 font-bold">
+                {equipamentosLotadosIds.length}
+              </span>
+            </TabsTrigger>
+          )}
         </TabsList>
 
         {/* ---------------- TAB 1: OPERAÇÃO DO CAIXA ---------------- */}
@@ -732,80 +840,46 @@ export default function GraficaRapida() {
                 </Card>
               </div>
 
-              {/* Equipamento Vinculado e Contadores das Impressoras da Gráfica */}
+              {/* Equipamentos Vinculados e Contadores das Impressoras da Gráfica */}
               <Card className="border border-gray-200 shadow-xs">
                 <CardHeader className="pb-3 flex flex-row items-center justify-between">
                   <div>
                     <CardTitle className="text-sm font-semibold text-gray-900 flex items-center gap-2">
-                      <Printer className="w-4 h-4 text-blue-600" /> Equipamento em Operação &
-                      Contadores
+                      <Printer className="w-4 h-4 text-blue-600" /> Equipamentos em Operação no
+                      Caixa
                     </CardTitle>
                     <p className="text-xs text-gray-500 mt-0.5">
-                      {caixaAberto.expand?.equipamento_id
-                        ? `Equipamento Vinculado: ${caixaAberto.expand.equipamento_id.marca} ${caixaAberto.expand.equipamento_id.modelo} (S/N: ${caixaAberto.expand.equipamento_id.numero_serie})`
-                        : 'Equipamento selecionado na abertura deste caixa'}
+                      Medidores de abertura registrados para as impressoras lotadas em operação
+                      neste caixa
                     </p>
                   </div>
-                  {caixaAberto.expand?.equipamento_id && (
-                    <Badge
-                      variant="outline"
-                      className="bg-blue-50 text-blue-700 border-blue-200 text-xs"
-                    >
-                      {caixaAberto.expand.equipamento_id.marca}{' '}
-                      {caixaAberto.expand.equipamento_id.modelo}
-                    </Badge>
-                  )}
+                  <Badge
+                    variant="outline"
+                    className="bg-blue-50 text-blue-700 border-blue-200 text-xs"
+                  >
+                    {contadoresCaixaAberto.length > 0
+                      ? `${contadoresCaixaAberto.length} Equipamento(s) Ativo(s)`
+                      : caixaAberto.expand?.equipamento_id
+                        ? `${caixaAberto.expand.equipamento_id.marca} ${caixaAberto.expand.equipamento_id.modelo}`
+                        : 'Equipamentos Ativos'}
+                  </Badge>
                 </CardHeader>
                 <CardContent className="pt-0">
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-3 bg-gray-50 rounded-lg border border-gray-200 mb-4 text-xs">
-                    <div>
-                      <span className="text-[10px] text-gray-500 uppercase font-semibold">
-                        Contador Anterior Mono
-                      </span>
-                      <p className="font-mono font-bold text-gray-800 text-sm">
-                        {caixaAberto.contador_anterior_mono?.toLocaleString('pt-BR') || 0}
-                      </p>
-                    </div>
-                    <div>
-                      <span className="text-[10px] text-gray-500 uppercase font-semibold">
-                        Abertura Mono
-                      </span>
-                      <p className="font-mono font-bold text-blue-800 text-sm">
-                        {caixaAberto.contador_abertura_mono?.toLocaleString('pt-BR') || 0}
-                      </p>
-                    </div>
-                    <div>
-                      <span className="text-[10px] text-gray-500 uppercase font-semibold">
-                        Contador Anterior Color
-                      </span>
-                      <p className="font-mono font-bold text-gray-800 text-sm">
-                        {caixaAberto.contador_anterior_color?.toLocaleString('pt-BR') || 0}
-                      </p>
-                    </div>
-                    <div>
-                      <span className="text-[10px] text-gray-500 uppercase font-semibold">
-                        Abertura Color
-                      </span>
-                      <p className="font-mono font-bold text-blue-800 text-sm">
-                        {caixaAberto.contador_abertura_color?.toLocaleString('pt-BR') || 0}
-                      </p>
-                    </div>
-                  </div>
-
                   {contadoresCaixaAberto.length === 0 ? (
-                    <p className="text-xs text-gray-500 py-4 text-center">
-                      Nenhum medidor gravado na abertura deste caixa.
-                    </p>
+                    <div className="p-4 bg-gray-50 rounded-lg border text-center text-xs text-gray-500">
+                      Nenhum contador detalhado registrado na abertura deste caixa.
+                    </div>
                   ) : (
                     <div className="overflow-x-auto">
                       <table className="w-full text-xs text-left">
                         <thead className="bg-gray-50 text-gray-600 font-semibold border-b">
                           <tr>
-                            <th className="py-2.5 px-3">Impressora</th>
+                            <th className="py-2.5 px-3">Equipamento / Modelo</th>
+                            <th className="py-2.5 px-3">Nº Série</th>
                             <th className="py-2.5 px-3 text-right">Abertura Mono</th>
                             <th className="py-2.5 px-3 text-right">Abertura Color</th>
-                            <th className="py-2.5 px-3 text-right">Abertura Cópias</th>
-                            <th className="py-2.5 px-3 text-right">Abertura Scanner</th>
+                            <th className="py-2.5 px-3 text-right">Cópias</th>
+                            <th className="py-2.5 px-3 text-right">Scanner</th>
                             <th className="py-2.5 px-3 text-right font-bold text-gray-900">
                               Total Inicial
                             </th>
@@ -819,9 +893,10 @@ export default function GraficaRapida() {
                             return (
                               <tr key={cnt.id} className="hover:bg-gray-50">
                                 <td className="py-2 px-3 font-sans font-medium text-gray-900">
-                                  {eq
-                                    ? `${eq.marca} ${eq.modelo} (${eq.numero_serie})`
-                                    : 'Impressora'}
+                                  {eq ? `${eq.marca} ${eq.modelo}` : 'Impressora'}
+                                </td>
+                                <td className="py-2 px-3 font-mono text-gray-500">
+                                  {eq?.numero_serie || '-'}
                                 </td>
                                 <td className="py-2 px-3 text-right text-gray-600">
                                   {cnt.abertura_mono?.toLocaleString('pt-BR')}
@@ -1287,9 +1362,9 @@ export default function GraficaRapida() {
                       <tr>
                         <th className="py-2.5 px-3">Data</th>
                         <th className="py-2.5 px-3">Operador</th>
-                        <th className="py-2.5 px-3">Equipamento</th>
+                        <th className="py-2.5 px-3">Equipamento(s)</th>
                         <th className="py-2.5 px-3">Status</th>
-                        <th className="py-2.5 px-3 text-center">Produção (Mono/Color)</th>
+                        <th className="py-2.5 px-3 text-center">Produção Total</th>
                         <th className="py-2.5 px-3 text-right">Total Entradas</th>
                         <th className="py-2.5 px-3 text-right font-bold text-emerald-700">
                           Lucro Caixa
@@ -1299,64 +1374,81 @@ export default function GraficaRapida() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
-                      {historicoCaixas.map((cx) => (
-                        <tr key={cx.id} className="hover:bg-gray-50">
-                          <td className="py-2.5 px-3 font-medium text-gray-900">
-                            {formatDate(cx.data)}
-                          </td>
-                          <td className="py-2.5 px-3 text-gray-600">{cx.operador}</td>
-                          <td className="py-2.5 px-3 text-gray-700">
-                            {cx.expand?.equipamento_id
-                              ? `${cx.expand.equipamento_id.marca} ${cx.expand.equipamento_id.modelo}`
-                              : 'Geral'}
-                          </td>
-                          <td className="py-2.5 px-3">
-                            <Badge
-                              variant="outline"
-                              className={
-                                cx.status === 'aberto'
-                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
-                                  : 'bg-gray-100 text-gray-700 border-gray-300'
-                              }
-                            >
-                              {cx.status === 'aberto' ? 'Aberto' : 'Fechado (Imutável)'}
-                            </Badge>
-                          </td>
-                          <td className="py-2.5 px-3 text-center font-mono text-xs">
-                            {cx.status === 'fechado' ? (
-                              <span className="text-gray-800">
-                                +{(cx.producao_mono ?? 0).toLocaleString('pt-BR')} M | +
-                                {(cx.producao_color ?? 0).toLocaleString('pt-BR')} C
-                              </span>
-                            ) : (
-                              <span className="text-gray-400">Em andamento</span>
-                            )}
-                          </td>
-                          <td className="py-2.5 px-3 text-right font-mono font-semibold text-gray-900">
-                            {formatCurrency(cx.total_entradas || 0)}
-                          </td>
-                          <td className="py-2.5 px-3 text-right font-mono font-bold text-emerald-700">
-                            {formatCurrency(
-                              cx.lucro_total ||
-                                (cx.total_entradas || 0) - (cx.total_custo_insumos || 0),
-                            )}
-                          </td>
-                          <td className="py-2.5 px-3 text-right font-mono font-bold text-blue-900">
-                            {formatCurrency(cx.saldo_final_dinheiro || 0)}
-                          </td>
-                          <td className="py-2.5 px-3 text-right">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => handleImprimirCupomCaixa(cx)}
-                              className="h-7 px-2 text-[11px] flex items-center gap-1 text-gray-700 hover:text-blue-700 hover:border-blue-300 shadow-xs"
-                              title="Imprimir cupom/ficha do fechamento"
-                            >
-                              <Printer className="w-3.5 h-3.5" /> Cupom
-                            </Button>
-                          </td>
-                        </tr>
-                      ))}
+                      {historicoCaixas.map((cx) => {
+                        const equipsDoCaixa =
+                          cx.expand?.equipamentos_ids && cx.expand.equipamentos_ids.length > 0
+                            ? cx.expand.equipamentos_ids
+                            : cx.expand?.equipamento_id
+                              ? [cx.expand.equipamento_id]
+                              : []
+
+                        const labelEquipamentos =
+                          equipsDoCaixa.length > 1
+                            ? `${equipsDoCaixa.length} equipamentos (${equipsDoCaixa
+                                .map((e) => e.modelo)
+                                .slice(0, 2)
+                                .join(', ')}${equipsDoCaixa.length > 2 ? '...' : ''})`
+                            : equipsDoCaixa.length === 1
+                              ? `${equipsDoCaixa[0].marca} ${equipsDoCaixa[0].modelo}`
+                              : 'Geral'
+
+                        return (
+                          <tr key={cx.id} className="hover:bg-gray-50">
+                            <td className="py-2.5 px-3 font-medium text-gray-900">
+                              {formatDate(cx.data)}
+                            </td>
+                            <td className="py-2.5 px-3 text-gray-600">{cx.operador}</td>
+                            <td className="py-2.5 px-3 text-gray-700" title={labelEquipamentos}>
+                              {labelEquipamentos}
+                            </td>
+                            <td className="py-2.5 px-3">
+                              <Badge
+                                variant="outline"
+                                className={
+                                  cx.status === 'aberto'
+                                    ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
+                                    : 'bg-gray-100 text-gray-700 border-gray-300'
+                                }
+                              >
+                                {cx.status === 'aberto' ? 'Aberto' : 'Fechado (Imutável)'}
+                              </Badge>
+                            </td>
+                            <td className="py-2.5 px-3 text-center font-mono text-xs">
+                              {cx.status === 'fechado' ? (
+                                <span className="text-gray-800">
+                                  +{(cx.producao_mono ?? 0).toLocaleString('pt-BR')} M | +
+                                  {(cx.producao_color ?? 0).toLocaleString('pt-BR')} C
+                                </span>
+                              ) : (
+                                <span className="text-gray-400">Em andamento</span>
+                              )}
+                            </td>
+                            <td className="py-2.5 px-3 text-right font-mono font-semibold text-gray-900">
+                              {formatCurrency(cx.total_entradas || 0)}
+                            </td>
+                            <td className="py-2.5 px-3 text-right font-mono font-bold text-emerald-700">
+                              {formatCurrency(
+                                cx.lucro_total ||
+                                  (cx.total_entradas || 0) - (cx.total_custo_insumos || 0),
+                              )}
+                            </td>
+                            <td className="py-2.5 px-3 text-right font-mono font-bold text-blue-900">
+                              {formatCurrency(cx.saldo_final_dinheiro || 0)}
+                            </td>
+                            <td className="py-2.5 px-3 text-right">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleImprimirCupomCaixa(cx)}
+                                className="h-7 px-2 text-[11px] flex items-center gap-1 text-gray-700 hover:text-blue-700 hover:border-blue-300 shadow-xs"
+                                title="Imprimir cupom/ficha do fechamento"
+                              >
+                                <Printer className="w-3.5 h-3.5" /> Cupom
+                              </Button>
+                            </td>
+                          </tr>
+                        )
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -1364,6 +1456,132 @@ export default function GraficaRapida() {
             </CardContent>
           </Card>
         </TabsContent>
+
+        {/* ---------------- TAB 5: CONFIGURAÇÃO DE LOTAÇÃO (ADMIN) ---------------- */}
+        {user?.role === 'administrador' && (
+          <TabsContent value="configuracao" className="space-y-4 pt-2">
+            <Card className="border border-gray-200 shadow-xs">
+              <CardHeader className="pb-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <div>
+                  <CardTitle className="text-base font-semibold text-gray-900 flex items-center gap-2">
+                    <Sliders className="w-5 h-5 text-blue-600" /> Lotação de Equipamentos na Gráfica
+                    Rápida
+                  </CardTitle>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    Selecione quais impressoras cadastradas em "Equipamentos" estão alocadas
+                    fisicamente no ambiente da gráfica rápida (mono, color, plotters e jatos de
+                    tinta).
+                  </p>
+                </div>
+                <Button
+                  onClick={handleSalvarConfigLotacao}
+                  disabled={isSalvandoLotacao}
+                  className="bg-blue-600 hover:bg-blue-700 text-white text-xs h-8"
+                >
+                  <CheckCircle2 className="w-3.5 h-3.5 mr-1" />
+                  {isSalvandoLotacao ? 'Salvando...' : 'Salvar Lotação'}
+                </Button>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="p-3 bg-blue-50/70 border border-blue-200 rounded-lg text-xs text-blue-900">
+                  <p className="font-semibold mb-1">
+                    Como funciona a lotação de equipamentos no STD:
+                  </p>
+                  <ul className="list-disc list-inside space-y-0.5 text-[11px] text-blue-800">
+                    <li>
+                      Os equipamentos continuam cadastrados e centralizados no módulo{' '}
+                      <strong>Equipamentos</strong>.
+                    </li>
+                    <li>
+                      Aqui você apenas define quais deles pertencem ao parque da Gráfica Rápida.
+                    </li>
+                    <li>
+                      Na abertura de caixa, o operador poderá selecionar simultaneamente múltiplos
+                      equipamentos lotados para operação conjunta.
+                    </li>
+                  </ul>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {equipamentos.map((eq) => {
+                    const isLotado = equipamentosLotadosIds.includes(eq.id)
+                    return (
+                      <div
+                        key={eq.id}
+                        onClick={() => handleToggleEquipamentoLotado(eq.id)}
+                        className={`p-3 rounded-lg border cursor-pointer transition-all ${
+                          isLotado
+                            ? 'bg-blue-50/70 border-blue-400 shadow-2xs'
+                            : 'bg-white border-gray-200 hover:border-gray-300 opacity-75'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="space-y-1">
+                            <span className="font-bold text-sm text-gray-900 block">
+                              {eq.marca} {eq.modelo}
+                            </span>
+                            <span className="text-[11px] font-mono text-gray-500 block">
+                              S/N: {eq.numero_serie}
+                            </span>
+                            <div className="flex items-center gap-1.5 flex-wrap pt-1">
+                              <Badge
+                                variant="outline"
+                                className="text-[10px] uppercase font-semibold"
+                              >
+                                {eq.tipo || 'Multifuncional'}
+                              </Badge>
+                              <Badge
+                                variant="outline"
+                                className={`text-[10px] ${
+                                  eq.colorida
+                                    ? 'bg-purple-50 text-purple-700 border-purple-200'
+                                    : 'bg-gray-100 text-gray-700 border-gray-300'
+                                }`}
+                              >
+                                {eq.colorida ? 'Color' : 'Monocromática'}
+                              </Badge>
+                            </div>
+                          </div>
+
+                          <div className="pt-0.5">
+                            {isLotado ? (
+                              <CheckSquare className="w-5 h-5 text-blue-600" />
+                            ) : (
+                              <Square className="w-5 h-5 text-gray-400" />
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="mt-2 pt-2 border-t border-gray-200/80 flex items-center justify-between text-[10.5px] font-mono text-gray-600">
+                          <span>
+                            Mono: {(eq.contador_monocromatico || 0).toLocaleString('pt-BR')}
+                          </span>
+                          {eq.colorida && (
+                            <span>
+                              Color: {(eq.contador_colorido || 0).toLocaleString('pt-BR')}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+
+                <div className="space-y-1 pt-2">
+                  <Label htmlFor="obs-lot">Observações sobre o ambiente da gráfica</Label>
+                  <Textarea
+                    id="obs-lot"
+                    rows={2}
+                    placeholder="Ex: Equipamentos alocados na bancada de acabamento e balcão principal..."
+                    value={obsLotacao}
+                    onChange={(e) => setObsLotacao(e.target.value)}
+                    className="text-xs"
+                  />
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+        )}
       </Tabs>
 
       {/* ---------------- MODAIS ---------------- */}
@@ -1403,93 +1621,87 @@ export default function GraficaRapida() {
               </div>
             </div>
 
-            {/* Seleção Obrigatória do Equipamento em Operação */}
+            {/* Seleção de Múltiplos Equipamentos em Operação (Lotados na Gráfica) */}
             <div className="p-3.5 bg-blue-50/60 rounded-xl border border-blue-200 space-y-3">
-              <div>
-                <Label htmlFor="sel-eq-caixa" className="font-bold text-blue-900 block mb-1">
-                  Equipamento em Operação neste Caixa <span className="text-red-500">*</span>
-                </Label>
-                <p className="text-[11px] text-blue-700 mb-2">
-                  Escolha qual impressora da gráfica está operando neste caixa para rastrear
-                  contadores e produção.
-                </p>
-                <Select
-                  value={equipamentoSelecionadoCaixa}
-                  onValueChange={(val) => handleTrocarEquipamentoAbertura(val)}
-                >
-                  <SelectTrigger id="sel-eq-caixa" className="bg-white">
-                    <SelectValue placeholder="Selecione o equipamento da gráfica" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {equipamentos.map((eq) => (
-                      <SelectItem key={eq.id} value={eq.id}>
-                        {eq.marca} {eq.modelo} — S/N: {eq.numero_serie}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                <div>
+                  <Label className="font-bold text-blue-900 block">
+                    Equipamentos em Operação neste Caixa <span className="text-red-500">*</span>
+                  </Label>
+                  <p className="text-[11px] text-blue-700">
+                    Selecione todos os equipamentos utilizados simultaneamente (ex.: mono, color,
+                    plotter e jato de tinta).
+                  </p>
+                </div>
+                <span className="text-xs font-bold text-blue-900 bg-blue-100 px-2 py-0.5 rounded-full w-fit">
+                  {equipamentosSelecionadosAbertura.length} selecionado(s)
+                </span>
               </div>
 
-              {/* Exibição dos Contadores Anteriores e Abertura do Equipamento Selecionado */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2 border-t border-blue-200 text-xs">
-                <div>
-                  <span className="text-[10px] text-gray-500 uppercase font-semibold">
-                    Anterior Mono
-                  </span>
-                  <p className="font-mono font-bold text-gray-800">
-                    {contadorAnteriorMono.toLocaleString('pt-BR')}
-                  </p>
+              {equipamentosLotados.length === 0 ? (
+                <div className="p-3 bg-amber-50 text-amber-800 rounded border border-amber-200 text-xs">
+                  Nenhum equipamento cadastrado como lotado na Gráfica Rápida.{' '}
+                  {user?.role === 'administrador' ? (
+                    <span>
+                      Configure na aba <strong>Equipamentos Lotados</strong>.
+                    </span>
+                  ) : (
+                    <span>Solicite a um administrador para configurar a lotação.</span>
+                  )}
                 </div>
-                <div>
-                  <Label className="text-[10.5px] font-semibold text-blue-900">
-                    Abertura Mono *
-                  </Label>
-                  <Input
-                    type="number"
-                    min="0"
-                    value={contadorAberturaMono}
-                    onChange={(e) => setContadorAberturaMono(parseInt(e.target.value) || 0)}
-                    required
-                    className="h-7 text-xs font-mono bg-white"
-                  />
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-56 overflow-y-auto p-1">
+                  {equipamentosLotados.map((eq) => {
+                    const isSelected = equipamentosSelecionadosAbertura.includes(eq.id)
+                    return (
+                      <div
+                        key={eq.id}
+                        onClick={() => handleToggleEquipamentoAbertura(eq.id)}
+                        className={`p-2.5 rounded-lg border cursor-pointer transition-all flex items-center justify-between ${
+                          isSelected
+                            ? 'bg-white border-blue-500 shadow-2xs text-blue-950 ring-1 ring-blue-500'
+                            : 'bg-white/60 border-gray-200 hover:border-gray-300 opacity-70'
+                        }`}
+                      >
+                        <div className="text-xs">
+                          <p className="font-bold text-gray-900">
+                            {eq.marca} {eq.modelo}
+                          </p>
+                          <p className="text-[10.5px] font-mono text-gray-500">
+                            S/N: {eq.numero_serie} • {eq.colorida ? 'Color' : 'Mono'}
+                          </p>
+                        </div>
+                        {isSelected ? (
+                          <CheckSquare className="w-5 h-5 text-blue-600 flex-shrink-0" />
+                        ) : (
+                          <Square className="w-5 h-5 text-gray-400 flex-shrink-0" />
+                        )}
+                      </div>
+                    )
+                  })}
                 </div>
-                <div>
-                  <span className="text-[10px] text-gray-500 uppercase font-semibold">
-                    Anterior Color
-                  </span>
-                  <p className="font-mono font-bold text-gray-800">
-                    {contadorAnteriorColor.toLocaleString('pt-BR')}
-                  </p>
-                </div>
-                <div>
-                  <Label className="text-[10.5px] font-semibold text-blue-900">
-                    Abertura Color *
-                  </Label>
-                  <Input
-                    type="number"
-                    min="0"
-                    value={contadorAberturaColor}
-                    onChange={(e) => setContadorAberturaColor(parseInt(e.target.value) || 0)}
-                    required
-                    className="h-7 text-xs font-mono bg-white"
-                  />
-                </div>
-              </div>
+              )}
             </div>
 
-            {/* Alimentação dos Contadores de Abertura das Demais Impressoras */}
+            {/* Alimentação dos Contadores de Abertura dos Equipamentos Selecionados */}
             <div className="space-y-2 pt-2 border-t">
               <Label className="font-semibold text-gray-900 block">
-                Contadores Iniciais das Impressoras da Gráfica:
+                Contadores de Abertura por Equipamento Selecionado:
               </Label>
               <p className="text-[11px] text-gray-500">
-                Alimente os contadores físicos de cada impressora ao abrir o caixa para apurar a
-                produção do dia.
+                Os contadores do último fechamento já foram pré-carregados automaticamente. Confira
+                ou ajuste as leituras físicas de cada impressora.
               </p>
 
               <div className="space-y-3">
-                {equipamentos.map((eq) => {
-                  const cnt = contadoresAbertura[eq.id] || {
+                {equipamentosSelecionadosAbertura.map((eqId) => {
+                  const eq = equipamentos.find((e) => e.id === eqId)
+                  const cnt = contadoresAbertura[eqId] || {
+                    antMono: 0,
+                    antColor: 0,
+                    antCopias: 0,
+                    antScanner: 0,
+                    antTotal: 0,
                     mono: 0,
                     color: 0,
                     copias: 0,
@@ -1497,19 +1709,26 @@ export default function GraficaRapida() {
                     total: 0,
                   }
                   return (
-                    <div key={eq.id} className="p-3 rounded-lg border bg-gray-50/70 space-y-2">
+                    <div key={eqId} className="p-3 rounded-lg border bg-gray-50/80 space-y-2">
                       <div className="font-bold text-gray-900 flex items-center justify-between">
-                        <span>
-                          {eq.marca} {eq.modelo}
+                        <span className="flex items-center gap-1.5">
+                          <Printer className="w-3.5 h-3.5 text-blue-600" />
+                          {eq ? `${eq.marca} ${eq.modelo}` : 'Impressora'}
                         </span>
-                        <span className="text-[11px] font-mono text-gray-500">
-                          S/N: {eq.numero_serie}
-                        </span>
+                        <div className="text-[11px] font-mono text-gray-500 flex items-center gap-2">
+                          <span>S/N: {eq?.numero_serie}</span>
+                          <span className="text-gray-400">•</span>
+                          <span>
+                            Últ. fechamento: {cnt.antMono || 0} M | {cnt.antColor || 0} C
+                          </span>
+                        </div>
                       </div>
 
                       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                         <div>
-                          <Label className="text-[10.5px] text-gray-600">Contador Mono</Label>
+                          <Label className="text-[10.5px] text-gray-600 font-semibold">
+                            Abertura Mono *
+                          </Label>
                           <Input
                             type="number"
                             min="0"
@@ -1518,15 +1737,18 @@ export default function GraficaRapida() {
                               const val = parseInt(e.target.value) || 0
                               setContadoresAbertura((prev) => ({
                                 ...prev,
-                                [eq.id]: { ...cnt, mono: val, total: val + cnt.color },
+                                [eqId]: { ...cnt, mono: val, total: val + cnt.color },
                               }))
                             }}
-                            className="h-7 text-xs font-mono"
+                            required
+                            className="h-7 text-xs font-mono bg-white"
                           />
                         </div>
 
                         <div>
-                          <Label className="text-[10.5px] text-gray-600">Contador Color</Label>
+                          <Label className="text-[10.5px] text-gray-600 font-semibold">
+                            Abertura Color
+                          </Label>
                           <Input
                             type="number"
                             min="0"
@@ -1535,10 +1757,10 @@ export default function GraficaRapida() {
                               const val = parseInt(e.target.value) || 0
                               setContadoresAbertura((prev) => ({
                                 ...prev,
-                                [eq.id]: { ...cnt, color: val, total: cnt.mono + val },
+                                [eqId]: { ...cnt, color: val, total: cnt.mono + val },
                               }))
                             }}
-                            className="h-7 text-xs font-mono"
+                            className="h-7 text-xs font-mono bg-white"
                           />
                         </div>
 
@@ -1552,10 +1774,10 @@ export default function GraficaRapida() {
                               const val = parseInt(e.target.value) || 0
                               setContadoresAbertura((prev) => ({
                                 ...prev,
-                                [eq.id]: { ...cnt, copias: val },
+                                [eqId]: { ...cnt, copias: val },
                               }))
                             }}
-                            className="h-7 text-xs font-mono"
+                            className="h-7 text-xs font-mono bg-white"
                           />
                         </div>
 
@@ -1569,10 +1791,10 @@ export default function GraficaRapida() {
                               const val = parseInt(e.target.value) || 0
                               setContadoresAbertura((prev) => ({
                                 ...prev,
-                                [eq.id]: { ...cnt, scanner: val },
+                                [eqId]: { ...cnt, scanner: val },
                               }))
                             }}
-                            className="h-7 text-xs font-mono"
+                            className="h-7 text-xs font-mono bg-white"
                           />
                         </div>
                       </div>
@@ -1642,186 +1864,141 @@ export default function GraficaRapida() {
               </div>
             </div>
 
-            {/* Contadores Finais para Apuração dos Deltas */}
-            {caixaAberto?.expand?.equipamento_id && (
-              <div className="p-3 bg-red-50/60 rounded-xl border border-red-200 space-y-2">
-                <span className="font-bold text-red-900 block">
-                  Contadores Finais do Equipamento em Operação:{' '}
-                  {caixaAberto.expand.equipamento_id.marca}{' '}
-                  {caixaAberto.expand.equipamento_id.modelo}
-                </span>
-                <p className="text-[11px] text-red-700">
-                  Atenção: Ao concluir o fechamento, estes contadores serão gravados de forma
-                  permanente e <strong>imutável</strong>.
-                </p>
-                <div className="grid grid-cols-2 gap-3 pt-1">
-                  <div>
-                    <Label className="text-[10.5px] font-semibold text-gray-700">
-                      Fechamento Mono (Abertura: {caixaAberto.contador_abertura_mono || 0}) *
-                    </Label>
-                    <Input
-                      type="number"
-                      min={caixaAberto.contador_abertura_mono || 0}
-                      value={contadorFechamentoMono}
-                      onChange={(e) => setContadorFechamentoMono(parseInt(e.target.value) || 0)}
-                      required
-                      className="h-8 text-xs font-mono bg-white font-bold"
-                    />
-                    <span className="text-[10px] text-emerald-700 font-medium">
-                      Produção Mono: +
-                      {Math.max(
-                        0,
-                        contadorFechamentoMono - (caixaAberto.contador_abertura_mono || 0),
-                      )}{' '}
-                      págs
-                    </span>
-                  </div>
-                  <div>
-                    <Label className="text-[10.5px] font-semibold text-gray-700">
-                      Fechamento Color (Abertura: {caixaAberto.contador_abertura_color || 0}) *
-                    </Label>
-                    <Input
-                      type="number"
-                      min={caixaAberto.contador_abertura_color || 0}
-                      value={contadorFechamentoColor}
-                      onChange={(e) => setContadorFechamentoColor(parseInt(e.target.value) || 0)}
-                      required
-                      className="h-8 text-xs font-mono bg-white font-bold"
-                    />
-                    <span className="text-[10px] text-emerald-700 font-medium">
-                      Produção Color: +
-                      {Math.max(
-                        0,
-                        contadorFechamentoColor - (caixaAberto.contador_abertura_color || 0),
-                      )}{' '}
-                      págs
-                    </span>
-                  </div>
-                </div>
-              </div>
-            )}
-
+            {/* Contadores Finais de Todos os Equipamentos em Operação no Caixa */}
             <div className="space-y-2 pt-2 border-t">
-              <Label className="font-semibold text-gray-900 block">
-                Contadores Finais das Impressoras (Ao Encerrar o Caixa):
-              </Label>
-              <p className="text-[11px] text-gray-500">
-                Informe as leituras finais dos medidores. O sistema calculará as páginas impressas,
-                cópias e scanners realizados.
-              </p>
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label className="font-semibold text-gray-900 block">
+                    Contadores Finais dos Equipamentos em Operação:
+                  </Label>
+                  <p className="text-[11px] text-gray-500">
+                    Informe as leituras finais dos medidores. O sistema calculará as páginas
+                    impressas, cópias e scanners realizados por equipamento.
+                  </p>
+                </div>
+                <Badge variant="outline" className="text-red-700 bg-red-50 border-red-200">
+                  Imutável após salvar
+                </Badge>
+              </div>
 
               <div className="space-y-3">
-                {contadoresCaixaAberto.map((cnt) => {
-                  const eq =
-                    cnt.expand?.equipamento_id ||
-                    equipamentos.find((e) => e.id === cnt.equipamento_id)
-                  const fCnt = contadoresFechamento[cnt.equipamento_id] || {
-                    mono: cnt.abertura_mono || 0,
-                    color: cnt.abertura_color || 0,
-                    copias: cnt.abertura_copias || 0,
-                    scanner: cnt.abertura_scanner || 0,
-                    total: cnt.abertura_total || 0,
-                  }
-                  const deltaMono = Math.max(0, fCnt.mono - (cnt.abertura_mono || 0))
-                  const deltaColor = Math.max(0, fCnt.color - (cnt.abertura_color || 0))
+                {Object.keys(contadoresFechamento).length === 0 ? (
+                  <p className="text-xs text-gray-500 py-3 text-center bg-gray-50 rounded border">
+                    Nenhum medidor para conferência.
+                  </p>
+                ) : (
+                  Object.entries(contadoresFechamento).map(([eqId, fCnt]) => {
+                    const eq = equipamentos.find((e) => e.id === eqId)
+                    const deltaMono = Math.max(0, fCnt.mono - (fCnt.abertura_mono || 0))
+                    const deltaColor = Math.max(0, fCnt.color - (fCnt.abertura_color || 0))
 
-                  return (
-                    <div key={cnt.id} className="p-3 rounded-lg border bg-gray-50/70 space-y-2">
-                      <div className="font-bold text-gray-900 flex items-center justify-between">
-                        <span>{eq ? `${eq.marca} ${eq.modelo}` : 'Impressora'}</span>
-                        <span className="text-[11px] font-mono text-emerald-700 font-bold">
-                          Produção do dia: +{deltaMono} mono | +{deltaColor} color
-                        </span>
+                    return (
+                      <div key={eqId} className="p-3 rounded-lg border bg-gray-50/80 space-y-2">
+                        <div className="font-bold text-gray-900 flex items-center justify-between">
+                          <span className="flex items-center gap-1.5">
+                            <Printer className="w-3.5 h-3.5 text-blue-600" />
+                            {eq ? `${eq.marca} ${eq.modelo}` : 'Impressora'}
+                            {eq?.numero_serie && (
+                              <span className="font-normal font-mono text-[11px] text-gray-500">
+                                ({eq.numero_serie})
+                              </span>
+                            )}
+                          </span>
+                          <span className="text-[11px] font-mono text-emerald-700 font-bold">
+                            Produção: +{deltaMono} mono | +{deltaColor} color
+                          </span>
+                        </div>
+
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                          <div>
+                            <Label className="text-[10.5px] text-gray-600 font-semibold">
+                              Final Mono (Inic: {fCnt.abertura_mono || 0}) *
+                            </Label>
+                            <Input
+                              type="number"
+                              min={fCnt.abertura_mono || 0}
+                              value={fCnt.mono}
+                              onChange={(e) => {
+                                const val = parseInt(e.target.value) || fCnt.abertura_mono || 0
+                                setContadoresFechamento((prev) => ({
+                                  ...prev,
+                                  [eqId]: {
+                                    ...fCnt,
+                                    mono: val,
+                                    total: val + fCnt.color,
+                                  },
+                                }))
+                              }}
+                              required
+                              className="h-7 text-xs font-mono bg-white font-bold"
+                            />
+                          </div>
+
+                          <div>
+                            <Label className="text-[10.5px] text-gray-600 font-semibold">
+                              Final Color (Inic: {fCnt.abertura_color || 0})
+                            </Label>
+                            <Input
+                              type="number"
+                              min={fCnt.abertura_color || 0}
+                              value={fCnt.color}
+                              onChange={(e) => {
+                                const val = parseInt(e.target.value) || fCnt.abertura_color || 0
+                                setContadoresFechamento((prev) => ({
+                                  ...prev,
+                                  [eqId]: {
+                                    ...fCnt,
+                                    color: val,
+                                    total: fCnt.mono + val,
+                                  },
+                                }))
+                              }}
+                              className="h-7 text-xs font-mono bg-white font-bold"
+                            />
+                          </div>
+
+                          <div>
+                            <Label className="text-[10.5px] text-gray-600">
+                              Final Cópias (Inic: {fCnt.abertura_copias || 0})
+                            </Label>
+                            <Input
+                              type="number"
+                              min={fCnt.abertura_copias || 0}
+                              value={fCnt.copias}
+                              onChange={(e) => {
+                                const val = parseInt(e.target.value) || fCnt.abertura_copias || 0
+                                setContadoresFechamento((prev) => ({
+                                  ...prev,
+                                  [eqId]: { ...fCnt, copias: val },
+                                }))
+                              }}
+                              className="h-7 text-xs font-mono bg-white"
+                            />
+                          </div>
+
+                          <div>
+                            <Label className="text-[10.5px] text-gray-600">
+                              Final Scanner (Inic: {fCnt.abertura_scanner || 0})
+                            </Label>
+                            <Input
+                              type="number"
+                              min={fCnt.abertura_scanner || 0}
+                              value={fCnt.scanner}
+                              onChange={(e) => {
+                                const val = parseInt(e.target.value) || fCnt.abertura_scanner || 0
+                                setContadoresFechamento((prev) => ({
+                                  ...prev,
+                                  [eqId]: { ...fCnt, scanner: val },
+                                }))
+                              }}
+                              className="h-7 text-xs font-mono bg-white"
+                            />
+                          </div>
+                        </div>
                       </div>
-
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                        <div>
-                          <Label className="text-[10.5px] text-gray-600">
-                            Final Mono (Inic: {cnt.abertura_mono})
-                          </Label>
-                          <Input
-                            type="number"
-                            min={cnt.abertura_mono || 0}
-                            value={fCnt.mono}
-                            onChange={(e) => {
-                              const val = parseInt(e.target.value) || cnt.abertura_mono || 0
-                              setContadoresFechamento((prev) => ({
-                                ...prev,
-                                [cnt.equipamento_id]: {
-                                  ...fCnt,
-                                  mono: val,
-                                  total: val + fCnt.color,
-                                },
-                              }))
-                            }}
-                            className="h-7 text-xs font-mono"
-                          />
-                        </div>
-
-                        <div>
-                          <Label className="text-[10.5px] text-gray-600">
-                            Final Color (Inic: {cnt.abertura_color})
-                          </Label>
-                          <Input
-                            type="number"
-                            min={cnt.abertura_color || 0}
-                            value={fCnt.color}
-                            onChange={(e) => {
-                              const val = parseInt(e.target.value) || cnt.abertura_color || 0
-                              setContadoresFechamento((prev) => ({
-                                ...prev,
-                                [cnt.equipamento_id]: {
-                                  ...fCnt,
-                                  color: val,
-                                  total: fCnt.mono + val,
-                                },
-                              }))
-                            }}
-                            className="h-7 text-xs font-mono"
-                          />
-                        </div>
-
-                        <div>
-                          <Label className="text-[10.5px] text-gray-600">
-                            Final Cópias (Inic: {cnt.abertura_copias})
-                          </Label>
-                          <Input
-                            type="number"
-                            min={cnt.abertura_copias || 0}
-                            value={fCnt.copias}
-                            onChange={(e) => {
-                              const val = parseInt(e.target.value) || cnt.abertura_copias || 0
-                              setContadoresFechamento((prev) => ({
-                                ...prev,
-                                [cnt.equipamento_id]: { ...fCnt, copias: val },
-                              }))
-                            }}
-                            className="h-7 text-xs font-mono"
-                          />
-                        </div>
-
-                        <div>
-                          <Label className="text-[10.5px] text-gray-600">
-                            Final Scanner (Inic: {cnt.abertura_scanner})
-                          </Label>
-                          <Input
-                            type="number"
-                            min={cnt.abertura_scanner || 0}
-                            value={fCnt.scanner}
-                            onChange={(e) => {
-                              const val = parseInt(e.target.value) || cnt.abertura_scanner || 0
-                              setContadoresFechamento((prev) => ({
-                                ...prev,
-                                [cnt.equipamento_id]: { ...fCnt, scanner: val },
-                              }))
-                            }}
-                            className="h-7 text-xs font-mono"
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  )
-                })}
+                    )
+                  })
+                )}
               </div>
             </div>
 

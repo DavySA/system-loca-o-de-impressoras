@@ -339,7 +339,7 @@ export default function Layout({ children }: LayoutProps) {
     if (path.startsWith('/personalizar')) return 'Personalizar Empresa & Cabeçalho'
     if (path.startsWith('/relatorios')) return 'Relatórios Mensais'
     if (path.startsWith('/suprimentos')) return 'Gestão de Suprimentos & Peças'
-    return 'TD Technology System ERP'
+    return 'STD'
   }
 
   const getInitials = (name?: string) => {
@@ -382,18 +382,14 @@ export default function Layout({ children }: LayoutProps) {
         <div className="h-16 flex items-center justify-between px-3.5 border-b border-[#374151]">
           <div className="flex items-center gap-2.5 overflow-hidden">
             <div className="w-10 h-10 rounded-lg bg-white/10 p-1 flex items-center justify-center shrink-0 border border-white/10">
-              <img
-                src={defaultLogo}
-                alt="TD Technology System ERP"
-                className="w-full h-full object-contain"
-              />
+              <img src={defaultLogo} alt="STD" className="w-full h-full object-contain" />
             </div>
             <div className="flex flex-col md:hidden lg:flex overflow-hidden">
-              <span className="font-bold text-sm text-white tracking-tight leading-none truncate">
-                TD Technology
+              <span className="font-bold text-base text-white tracking-tight leading-none truncate">
+                STD
               </span>
               <span className="text-[10px] text-blue-400 font-semibold uppercase tracking-wider mt-0.5">
-                System ERP
+                Sistema ERP
               </span>
             </div>
           </div>
@@ -595,8 +591,7 @@ export default function Layout({ children }: LayoutProps) {
             {/* Esquerda: Copyright e Site Fallback */}
             <div className="flex flex-wrap items-center justify-center md:justify-start gap-x-2 gap-y-1">
               <span className="font-semibold text-gray-800">
-                © {new Date().getFullYear()}{' '}
-                {empresaConfig?.nome_fantasia || 'TD Technology System ERP'}
+                © {new Date().getFullYear()} {empresaConfig?.nome_fantasia || 'STD'}
               </span>
               <span className="hidden sm:inline text-gray-300">•</span>
               <a
