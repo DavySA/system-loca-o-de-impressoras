@@ -256,11 +256,12 @@ export default function GraficaRapida() {
   // Visualizar e reimprimir cupom de qualquer caixa (aberto ou histórico fechado)
   const handleImprimirCupomCaixa = async (caixa: GraficaCaixa) => {
     try {
-      const [cnts, vnds] = await Promise.all([
+      const [cnts, vnds, caixaCompleto] = await Promise.all([
         graficaService.getContadoresPorCaixa(caixa.id),
         graficaService.getVendas(caixa.id),
+        graficaService.getCaixaById(caixa.id).catch(() => caixa),
       ])
-      setCaixaParaImprimir(caixa)
+      setCaixaParaImprimir(caixaCompleto || caixa)
       setContadoresImpressao(cnts)
       setVendasImpressao(vnds)
       setIsModalImprimirCaixaOpen(true)
@@ -1533,12 +1534,14 @@ export default function GraficaRapida() {
                               <Badge
                                 variant="outline"
                                 className={`text-[10px] ${
-                                  eq.colorida
+                                  eq.colorida || (eq.contador_colorido || 0) > 0
                                     ? 'bg-purple-50 text-purple-700 border-purple-200'
                                     : 'bg-gray-100 text-gray-700 border-gray-300'
                                 }`}
                               >
-                                {eq.colorida ? 'Color' : 'Monocromática'}
+                                {eq.colorida || (eq.contador_colorido || 0) > 0
+                                  ? 'Color'
+                                  : 'Monocromática'}
                               </Badge>
                             </div>
                           </div>
@@ -1556,7 +1559,7 @@ export default function GraficaRapida() {
                           <span>
                             Mono: {(eq.contador_monocromatico || 0).toLocaleString('pt-BR')}
                           </span>
-                          {eq.colorida && (
+                          {(eq.colorida || (eq.contador_colorido || 0) > 0) && (
                             <span>
                               Color: {(eq.contador_colorido || 0).toLocaleString('pt-BR')}
                             </span>
@@ -1668,7 +1671,8 @@ export default function GraficaRapida() {
                             {eq.marca} {eq.modelo}
                           </p>
                           <p className="text-[10.5px] font-mono text-gray-500">
-                            S/N: {eq.numero_serie} • {eq.colorida ? 'Color' : 'Mono'}
+                            S/N: {eq.numero_serie} •{' '}
+                            {eq.colorida || (eq.contador_colorido || 0) > 0 ? 'Color' : 'Mono'}
                           </p>
                         </div>
                         {isSelected ? (

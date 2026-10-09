@@ -4,6 +4,7 @@ import type {
   GraficaCaixaContador,
   GraficaVenda,
   ConfiguracoesEmpresa,
+  Equipamento,
 } from '@/types'
 import {
   formatCurrency,
@@ -20,6 +21,14 @@ interface CaixaCupomRelatorioProps {
   contadores?: GraficaCaixaContador[]
   vendas?: GraficaVenda[]
   configEmpresa: ConfiguracoesEmpresa | null
+  formato?: 'bobina' | 'a5'
+}
+
+// Determina se o equipamento imprime em cores com base no campo ou contadores
+function isEquipamentoColorido(eq?: Equipamento | null): boolean {
+  if (!eq) return false
+  if (eq.colorida !== undefined) return Boolean(eq.colorida)
+  return (eq.contador_colorido || 0) > 0
 }
 
 export function CaixaCupomRelatorio({
@@ -27,11 +36,32 @@ export function CaixaCupomRelatorio({
   contadores = [],
   vendas = [],
   configEmpresa,
+  formato = 'bobina',
 }: CaixaCupomRelatorioProps) {
   const logoSrc = configEmpresa?.logo ? configuracoesService.getLogoUrl(configEmpresa) : defaultLogo
-  const equipamentoPrincipal = caixa.expand?.equipamento_id
 
-  // Totais de vendas
+  // Equipamentos vinculados ao caixa: multi-equipamento (equipamentos_ids) com fallback para equipamento único legado
+  const equipamentosVinculados: Equipamento[] = React.useMemo(() => {
+    if (caixa.expand?.equipamentos_ids && caixa.expand.equipamentos_ids.length > 0) {
+      return caixa.expand.equipamentos_ids
+    }
+    if (caixa.expand?.equipamento_id) {
+      return [caixa.expand.equipamento_id]
+    }
+    // Caso contadores carreguem o equipamento expandido
+    const equipsDosContadores = contadores
+      .map((c) => c.expand?.equipamento_id)
+      .filter((e): e is Equipamento => Boolean(e))
+    if (equipsDosContadores.length > 0) {
+      // Remover duplicatas
+      const map = new Map<string, Equipamento>()
+      equipsDosContadores.forEach((eq) => map.set(eq.id, eq))
+      return Array.from(map.values())
+    }
+    return []
+  }, [caixa, contadores])
+
+  // Totais de vendas e custos
   const totalEntradas =
     caixa.total_entradas ?? vendas.reduce((acc, v) => acc + (v.valor_total || 0), 0)
   const totalCustos =
@@ -55,12 +85,109 @@ export function CaixaCupomRelatorio({
   const informadoGaveta = caixa.saldo_final_dinheiro ?? esperadoGaveta
   const diferencaGaveta = informadoGaveta - esperadoGaveta
 
+  // Totais consolidados de produção física apurados entre todos os equipamentos
+  const consolidadoProducao = React.useMemo(() => {
+    if (contadores.length > 0) {
+      let totAberturaMono = 0
+      let totFechamentoMono = 0
+      let totDeltaMono = 0
+
+      let totAberturaColor = 0
+      let totFechamentoColor = 0
+      let totDeltaColor = 0
+
+      let totAberturaCopias = 0
+      let totFechamentoCopias = 0
+      let totDeltaCopias = 0
+
+      let totAberturaScanner = 0
+      let totFechamentoScanner = 0
+      let totDeltaScanner = 0
+
+      contadores.forEach((c) => {
+        const abM = c.abertura_mono || 0
+        const fcM = c.fechamento_mono ?? abM
+        const dM = c.delta_mono ?? Math.max(0, fcM - abM)
+        totAberturaMono += abM
+        totFechamentoMono += fcM
+        totDeltaMono += dM
+
+        const abC = c.abertura_color || 0
+        const fcC = c.fechamento_color ?? abC
+        const dC = c.delta_color ?? Math.max(0, fcC - abC)
+        totAberturaColor += abC
+        totFechamentoColor += fcC
+        totDeltaColor += dC
+
+        const abCp = c.abertura_copias || 0
+        const fcCp = c.fechamento_copias ?? abCp
+        const dCp = c.delta_copias ?? Math.max(0, fcCp - abCp)
+        totAberturaCopias += abCp
+        totFechamentoCopias += fcCp
+        totDeltaCopias += dCp
+
+        const abSc = c.abertura_scanner || 0
+        const fcSc = c.fechamento_scanner ?? abSc
+        const dSc = c.delta_scanner ?? Math.max(0, fcSc - abSc)
+        totAberturaScanner += abSc
+        totFechamentoScanner += fcSc
+        totDeltaScanner += dSc
+      })
+
+      return {
+        totAberturaMono,
+        totFechamentoMono,
+        totDeltaMono,
+        totAberturaColor,
+        totFechamentoColor,
+        totDeltaColor,
+        totAberturaCopias,
+        totFechamentoCopias,
+        totDeltaCopias,
+        totAberturaScanner,
+        totFechamentoScanner,
+        totDeltaScanner,
+        totGeralProducao: totDeltaMono + totDeltaColor,
+      }
+    }
+
+    // Fallback legado com dados acumulados no próprio caixa
+    const abM = caixa.contador_abertura_mono || 0
+    const fcM = caixa.contador_fechamento_mono ?? abM
+    const dM = caixa.producao_mono ?? Math.max(0, fcM - abM)
+
+    const abC = caixa.contador_abertura_color || 0
+    const fcC = caixa.contador_fechamento_color ?? abC
+    const dC = caixa.producao_color ?? Math.max(0, fcC - abC)
+
+    return {
+      totAberturaMono: abM,
+      totFechamentoMono: fcM,
+      totDeltaMono: dM,
+      totAberturaColor: abC,
+      totFechamentoColor: fcC,
+      totDeltaColor: dC,
+      totAberturaCopias: 0,
+      totFechamentoCopias: 0,
+      totDeltaCopias: 0,
+      totAberturaScanner: 0,
+      totFechamentoScanner: 0,
+      totDeltaScanner: 0,
+      totGeralProducao: dM + dC,
+    }
+  }, [caixa, contadores])
+
+  const containerClasses =
+    formato === 'bobina' ? 'max-w-[420px] p-5 text-[11px]' : 'max-w-[560px] p-6 text-[12px]'
+
   return (
-    <div className="bg-white text-gray-900 p-6 max-w-[420px] mx-auto font-mono text-[11px] leading-tight border border-gray-300 shadow-sm print:border-none print:shadow-none print:p-2 print:max-w-none">
+    <div
+      className={`bg-white text-gray-900 mx-auto font-mono leading-tight border border-gray-300 shadow-sm print:border-none print:shadow-none print:p-2 print:max-w-none ${containerClasses}`}
+    >
       {/* CABEÇALHO */}
       <div className="text-center border-b-2 border-dashed border-gray-800 pb-3 mb-3">
         <div className="w-20 h-12 mx-auto flex items-center justify-center mb-1">
-          <img src={logoSrc} alt="Logo" className="max-h-12 max-w-[120px] object-contain" />
+          <img src={logoSrc} alt="Logo" className="max-h-12 max-w-[130px] object-contain" />
         </div>
         <h1 className="font-bold text-xs uppercase tracking-tight text-gray-900">
           {configEmpresa?.razao_social || 'STD'}
@@ -82,8 +209,8 @@ export function CaixaCupomRelatorio({
           <span className="font-bold text-xs uppercase tracking-wider block">
             *** FECHAMENTO DE CAIXA — GRÁFICA RÁPIDA ***
           </span>
-          <span className="text-[10px] text-gray-700 font-semibold">
-            CUPOM / FICHA DIÁRIA POR EQUIPAMENTO
+          <span className="text-[10px] text-gray-700 font-semibold block">
+            CUPOM MULTI-EQUIPAMENTO COM LEITURA INDIVIDUAL
           </span>
         </div>
       </div>
@@ -116,137 +243,180 @@ export function CaixaCupomRelatorio({
             {caixa.status === 'fechado' ? '[FECHADO - IMUTÁVEL]' : '[ABERTO]'}
           </span>
         </div>
+        <div className="flex justify-between">
+          <span className="text-gray-600">PARQUE EM OPERAÇÃO:</span>
+          <span className="font-bold">
+            {equipamentosVinculados.length > 0
+              ? `${equipamentosVinculados.length} equipamento(s)`
+              : contadores.length > 0
+                ? `${contadores.length} equipamento(s)`
+                : '1 equipamento (legado)'}
+          </span>
+        </div>
       </div>
 
-      {/* EQUIPAMENTO PRINCIPAL */}
+      {/* LISTA DE EQUIPAMENTOS EM OPERAÇÃO */}
       <div className="border-b border-dashed border-gray-600 pb-2 mb-2">
-        <span className="font-bold block uppercase text-[10.5px] mb-1">
-          &gt;&gt; EQUIPAMENTO DO CAIXA
-        </span>
-        {equipamentoPrincipal ? (
-          <div className="space-y-0.5">
-            <div className="flex justify-between">
-              <span className="text-gray-600">MODELO:</span>
-              <span className="font-bold">
-                {equipamentoPrincipal.marca} {equipamentoPrincipal.modelo}
-              </span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-gray-600">S/N:</span>
-              <span className="font-mono">{equipamentoPrincipal.numero_serie}</span>
-            </div>
-            {equipamentoPrincipal.numero_patrimonio && (
-              <div className="flex justify-between">
-                <span className="text-gray-600">PATRIMÔNIO:</span>
-                <span>{equipamentoPrincipal.numero_patrimonio}</span>
+        <div className="flex justify-between items-center mb-1">
+          <span className="font-bold block uppercase text-[10.5px]">
+            &gt;&gt; EQUIPAMENTOS DO CAIXA (
+            {equipamentosVinculados.length || contadores.length || 1})
+          </span>
+          <span className="text-[9.5px] text-gray-500 uppercase font-semibold">
+            {formato === 'bobina' ? '80mm' : 'A5 Ficha'}
+          </span>
+        </div>
+        {equipamentosVinculados.length > 0 ? (
+          <div className="space-y-1">
+            {equipamentosVinculados.map((eq, idx) => (
+              <div
+                key={eq.id || idx}
+                className="bg-gray-50/70 p-1 rounded border border-gray-200 text-[10px]"
+              >
+                <div className="flex justify-between font-bold text-gray-900">
+                  <span>
+                    #{idx + 1} {eq.marca} {eq.modelo}
+                  </span>
+                  <span
+                    className={`text-[9px] uppercase px-1.5 py-0.2 rounded font-semibold ${
+                      isEquipamentoColorido(eq)
+                        ? 'bg-purple-100 text-purple-800 border border-purple-200'
+                        : 'bg-gray-200 text-gray-700'
+                    }`}
+                  >
+                    {isEquipamentoColorido(eq) ? 'Color' : 'Mono'}
+                  </span>
+                </div>
+                <div className="flex justify-between text-[9px] text-gray-600 font-mono">
+                  <span>S/N: {eq.numero_serie || '-'}</span>
+                  {eq.numero_patrimonio ? <span>PAT: {eq.numero_patrimonio}</span> : null}
+                  <span>Tipo: {eq.tipo || 'Multifuncional'}</span>
+                </div>
               </div>
-            )}
+            ))}
           </div>
         ) : (
-          <p className="text-gray-500 italic">Equipamento geral ou não especificado.</p>
+          <p className="text-gray-500 italic text-[10px]">Equipamento geral ou não especificado.</p>
         )}
       </div>
 
-      {/* CONTADORES E PRODUÇÃO */}
+      {/* APURAÇÃO INDIVIDUAL DOS CONTADORES POR EQUIPAMENTO */}
       <div className="border-b border-dashed border-gray-600 pb-2 mb-2">
-        <span className="font-bold block uppercase text-[10.5px] mb-1">
-          &gt;&gt; APURAÇÃO DE CONTADORES FÍSICOS
-        </span>
+        <div className="flex justify-between items-center mb-1">
+          <span className="font-bold block uppercase text-[10.5px]">
+            &gt;&gt; CONTADORES INDIVIDUAIS POR MÁQUINA
+          </span>
+          <span className="text-[9px] text-gray-600">
+            {contadores.length > 0 ? `${contadores.length} medidor(es)` : 'Leitura consolidada'}
+          </span>
+        </div>
+
         {contadores.length > 0 ? (
           <div className="space-y-2">
-            {contadores.map((cnt) => {
-              const eq = cnt.expand?.equipamento_id
+            {contadores.map((cnt, idx) => {
+              const eq =
+                cnt.expand?.equipamento_id ||
+                equipamentosVinculados.find((e) => e.id === cnt.equipamento_id)
+              const abMono = cnt.abertura_mono || 0
+              const fcMono = cnt.fechamento_mono ?? abMono
+              const prodMono = cnt.delta_mono ?? Math.max(0, fcMono - abMono)
+
+              const abColor = cnt.abertura_color || 0
+              const fcColor = cnt.fechamento_color ?? abColor
+              const prodColor = cnt.delta_color ?? Math.max(0, fcColor - abColor)
+
+              const abCopias = cnt.abertura_copias || 0
+              const fcCopias = cnt.fechamento_copias ?? abCopias
+              const prodCopias = cnt.delta_copias ?? Math.max(0, fcCopias - abCopias)
+
+              const abScan = cnt.abertura_scanner || 0
+              const fcScan = cnt.fechamento_scanner ?? abScan
+              const prodScan = cnt.delta_scanner ?? Math.max(0, fcScan - abScan)
+
+              const totalProdMaquina = prodMono + prodColor
+
               return (
-                <div key={cnt.id} className="bg-gray-50 p-1.5 rounded border border-gray-200">
-                  <div className="font-bold text-[10px] text-gray-800 border-b pb-0.5 mb-1 flex justify-between">
-                    <span>{eq ? `${eq.marca} ${eq.modelo}` : 'Impressora'}</span>
-                    <span className="text-[9px] text-gray-500 font-normal">
+                <div
+                  key={cnt.id || idx}
+                  className="bg-gray-50 p-1.5 rounded border border-gray-300"
+                >
+                  <div className="font-bold text-[10px] text-gray-900 border-b pb-0.5 mb-1 flex justify-between items-center">
+                    <span className="truncate max-w-[260px]">
+                      {eq ? `${eq.marca} ${eq.modelo}` : `Equipamento #${idx + 1}`}
+                    </span>
+                    <span className="text-[9px] text-gray-600 font-mono font-normal">
                       {eq?.numero_serie ? `S/N: ${eq.numero_serie}` : ''}
                     </span>
                   </div>
+
                   <table className="w-full text-[9.5px]">
                     <thead>
                       <tr className="text-gray-600 border-b border-gray-200">
                         <th className="text-left font-normal">TIPO</th>
-                        <th className="text-right font-normal">INIC</th>
-                        <th className="text-right font-normal">FIM</th>
-                        <th className="text-right font-bold">PROD</th>
+                        <th className="text-right font-normal">ABERTURA</th>
+                        <th className="text-right font-normal">FECHAM.</th>
+                        <th className="text-right font-bold text-gray-900">PRODUÇÃO</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
                       <tr>
-                        <td>MONO</td>
-                        <td className="text-right font-mono">
-                          {(cnt.abertura_mono || 0).toLocaleString('pt-BR')}
-                        </td>
-                        <td className="text-right font-mono">
-                          {(cnt.fechamento_mono || cnt.abertura_mono || 0).toLocaleString('pt-BR')}
-                        </td>
+                        <td className="font-semibold">MONO</td>
+                        <td className="text-right font-mono">{abMono.toLocaleString('pt-BR')}</td>
+                        <td className="text-right font-mono">{fcMono.toLocaleString('pt-BR')}</td>
                         <td className="text-right font-mono font-bold text-emerald-800">
-                          +
-                          {(
-                            cnt.delta_mono ??
-                            Math.max(0, (cnt.fechamento_mono || 0) - (cnt.abertura_mono || 0))
-                          ).toLocaleString('pt-BR')}
+                          +{prodMono.toLocaleString('pt-BR')}
                         </td>
                       </tr>
-                      <tr>
-                        <td>COLOR</td>
-                        <td className="text-right font-mono">
-                          {(cnt.abertura_color || 0).toLocaleString('pt-BR')}
-                        </td>
-                        <td className="text-right font-mono">
-                          {(cnt.fechamento_color || cnt.abertura_color || 0).toLocaleString(
-                            'pt-BR',
-                          )}
-                        </td>
-                        <td className="text-right font-mono font-bold text-emerald-800">
-                          +
-                          {(
-                            cnt.delta_color ??
-                            Math.max(0, (cnt.fechamento_color || 0) - (cnt.abertura_color || 0))
-                          ).toLocaleString('pt-BR')}
-                        </td>
-                      </tr>
-                      {(cnt.fechamento_copias || 0) > 0 && (
+                      {(abColor > 0 || fcColor > 0 || isEquipamentoColorido(eq)) && (
+                        <tr>
+                          <td className="font-semibold text-purple-900">COLOR</td>
+                          <td className="text-right font-mono">
+                            {abColor.toLocaleString('pt-BR')}
+                          </td>
+                          <td className="text-right font-mono">
+                            {fcColor.toLocaleString('pt-BR')}
+                          </td>
+                          <td className="text-right font-mono font-bold text-purple-800">
+                            +{prodColor.toLocaleString('pt-BR')}
+                          </td>
+                        </tr>
+                      )}
+                      {(abCopias > 0 || fcCopias > 0) && (
                         <tr>
                           <td>CÓPIAS</td>
                           <td className="text-right font-mono">
-                            {(cnt.abertura_copias || 0).toLocaleString('pt-BR')}
+                            {abCopias.toLocaleString('pt-BR')}
                           </td>
                           <td className="text-right font-mono">
-                            {(cnt.fechamento_copias || 0).toLocaleString('pt-BR')}
+                            {fcCopias.toLocaleString('pt-BR')}
                           </td>
                           <td className="text-right font-mono font-bold">
-                            +
-                            {(
-                              cnt.delta_copias ??
-                              Math.max(0, (cnt.fechamento_copias || 0) - (cnt.abertura_copias || 0))
-                            ).toLocaleString('pt-BR')}
+                            +{prodCopias.toLocaleString('pt-BR')}
                           </td>
                         </tr>
                       )}
-                      {(cnt.fechamento_scanner || 0) > 0 && (
+                      {(abScan > 0 || fcScan > 0) && (
                         <tr>
                           <td>SCANNER</td>
-                          <td className="text-right font-mono">
-                            {(cnt.abertura_scanner || 0).toLocaleString('pt-BR')}
-                          </td>
-                          <td className="text-right font-mono">
-                            {(cnt.fechamento_scanner || 0).toLocaleString('pt-BR')}
-                          </td>
+                          <td className="text-right font-mono">{abScan.toLocaleString('pt-BR')}</td>
+                          <td className="text-right font-mono">{fcScan.toLocaleString('pt-BR')}</td>
                           <td className="text-right font-mono font-bold">
-                            +
-                            {(
-                              cnt.delta_scanner ??
-                              Math.max(
-                                0,
-                                (cnt.fechamento_scanner || 0) - (cnt.abertura_scanner || 0),
-                              )
-                            ).toLocaleString('pt-BR')}
+                            +{prodScan.toLocaleString('pt-BR')}
                           </td>
                         </tr>
                       )}
+                      <tr className="bg-gray-100/80 font-bold border-t border-gray-300">
+                        <td className="py-0.5">SUBTOTAL</td>
+                        <td className="text-right font-mono text-[9px]">
+                          {(abMono + abColor).toLocaleString('pt-BR')}
+                        </td>
+                        <td className="text-right font-mono text-[9px]">
+                          {(fcMono + fcColor).toLocaleString('pt-BR')}
+                        </td>
+                        <td className="text-right font-mono text-emerald-900">
+                          +{totalProdMaquina.toLocaleString('pt-BR')} págs
+                        </td>
+                      </tr>
                     </tbody>
                   </table>
                 </div>
@@ -254,9 +424,10 @@ export function CaixaCupomRelatorio({
             })}
           </div>
         ) : (
-          <div className="space-y-1">
+          /* Fallback para caixas legados de equipamento único */
+          <div className="space-y-1 bg-gray-50 p-2 rounded border border-gray-200">
             <div className="flex justify-between">
-              <span className="text-gray-600">MONO (INIC / FIM):</span>
+              <span className="text-gray-600">MONO (ABERTURA → FECHAM.):</span>
               <span className="font-mono">
                 {(caixa.contador_abertura_mono || 0).toLocaleString('pt-BR')} →{' '}
                 {(
@@ -281,7 +452,7 @@ export function CaixaCupomRelatorio({
               </span>
             </div>
             <div className="flex justify-between">
-              <span className="text-gray-600">COLOR (INIC / FIM):</span>
+              <span className="text-gray-600">COLOR (ABERTURA → FECHAM.):</span>
               <span className="font-mono">
                 {(caixa.contador_abertura_color || 0).toLocaleString('pt-BR')} →{' '}
                 {(
@@ -293,7 +464,7 @@ export function CaixaCupomRelatorio({
             </div>
             <div className="flex justify-between">
               <span className="text-gray-600">PRODUÇÃO COLOR:</span>
-              <span className="font-mono font-bold text-emerald-800">
+              <span className="font-mono font-bold text-purple-800">
                 +
                 {(
                   caixa.producao_color ??
@@ -309,6 +480,49 @@ export function CaixaCupomRelatorio({
         )}
       </div>
 
+      {/* TOTAIS FÍSICOS CONSOLIDADOS DO CAIXA (SOMA DE TODAS AS MÁQUINAS) */}
+      <div className="border-b-2 border-dashed border-gray-800 pb-2 mb-2 bg-emerald-50/60 p-2 rounded">
+        <span className="font-bold block uppercase text-[10.5px] text-emerald-950 mb-1">
+          &gt;&gt; TOTAL CONSOLIDADO DE PRODUÇÃO DO CAIXA
+        </span>
+        <div className="space-y-0.5 text-[10px]">
+          <div className="flex justify-between">
+            <span className="text-gray-700">TOTAL MONOCROMÁTICO PRODUZIDO:</span>
+            <span className="font-mono font-bold text-gray-900">
+              +{consolidadoProducao.totDeltaMono.toLocaleString('pt-BR')} págs
+            </span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-gray-700">TOTAL COLORIDO PRODUZIDO:</span>
+            <span className="font-mono font-bold text-purple-900">
+              +{consolidadoProducao.totDeltaColor.toLocaleString('pt-BR')} págs
+            </span>
+          </div>
+          {consolidadoProducao.totDeltaCopias > 0 && (
+            <div className="flex justify-between">
+              <span className="text-gray-700">TOTAL CÓPIAS FÍSICAS:</span>
+              <span className="font-mono font-semibold">
+                +{consolidadoProducao.totDeltaCopias.toLocaleString('pt-BR')}
+              </span>
+            </div>
+          )}
+          {consolidadoProducao.totDeltaScanner > 0 && (
+            <div className="flex justify-between">
+              <span className="text-gray-700">TOTAL DIGITALIZAÇÕES/SCANNER:</span>
+              <span className="font-mono font-semibold">
+                +{consolidadoProducao.totDeltaScanner.toLocaleString('pt-BR')}
+              </span>
+            </div>
+          )}
+          <div className="flex justify-between font-bold text-xs pt-1 border-t border-emerald-300 text-emerald-950">
+            <span>VOLUME TOTAL IMPRESSO (MONO + COLOR):</span>
+            <span className="font-mono">
+              +{consolidadoProducao.totGeralProducao.toLocaleString('pt-BR')} páginas
+            </span>
+          </div>
+        </div>
+      </div>
+
       {/* MOVIMENTO DE INSUMOS E SERVIÇOS PRESTADOS */}
       <div className="border-b border-dashed border-gray-600 pb-2 mb-2">
         <div className="flex justify-between items-center mb-1">
@@ -319,9 +533,9 @@ export function CaixaCupomRelatorio({
         </div>
         {vendas.length > 0 ? (
           <div className="space-y-1 max-h-48 overflow-hidden">
-            {vendas.slice(0, 10).map((v, idx) => (
+            {vendas.slice(0, 12).map((v, idx) => (
               <div key={v.id || idx} className="flex justify-between text-[10px]">
-                <span className="truncate max-w-[240px]">
+                <span className="truncate max-w-[250px]">
                   {v.quantidade}x {v.descricao}
                 </span>
                 <span className="font-mono font-semibold">
@@ -329,9 +543,9 @@ export function CaixaCupomRelatorio({
                 </span>
               </div>
             ))}
-            {vendas.length > 10 && (
+            {vendas.length > 12 && (
               <p className="text-[9px] text-gray-500 text-center italic pt-0.5">
-                + {vendas.length - 10} outro(s) item(ns) detalhado(s) no sistema
+                + {vendas.length - 12} outro(s) item(ns) detalhado(s) no sistema
               </p>
             )}
           </div>
@@ -343,7 +557,7 @@ export function CaixaCupomRelatorio({
       {/* FORMAS DE PAGAMENTO */}
       <div className="border-b border-dashed border-gray-600 pb-2 mb-2 space-y-1">
         <span className="font-bold block uppercase text-[10.5px] mb-1">
-          &gt;&gt; RECEBIMENTOS POR MEIO DE PAGAMENTO
+          &gt;&gt; RECEBIMENTOS POR FORMA DE PAGAMENTO
         </span>
         <div className="space-y-0.5 text-[10.5px]">
           <div className="flex justify-between">

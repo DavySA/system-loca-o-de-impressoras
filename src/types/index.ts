@@ -54,6 +54,8 @@ export interface Equipamento {
   contador_colorido: number
   data_aquisicao?: string
   status: 'disponivel' | 'locado' | 'em_manutencao' | 'inativo'
+  tipo?: string
+  colorida?: boolean
   created: string
   updated: string
   expand?: {
