@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-09T02:24:47.549Z",
+  "generatedAt": "2026-10-10T00:45:07.196Z",
   "collections": [
     {
       "name": "users",
@@ -775,6 +775,12 @@
           "required": false,
           "system": false,
           "collectionRef": "users"
+        },
+        {
+          "name": "boleto_pdf",
+          "type": "file",
+          "required": false,
+          "system": false
         }
       ],
       "indexes": [

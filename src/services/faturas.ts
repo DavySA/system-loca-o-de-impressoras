@@ -28,8 +28,27 @@ export const faturasService = {
     return pb.collection('faturas').create<Fatura>(data)
   },
 
-  async update(id: string, data: Partial<Fatura>): Promise<Fatura> {
+  async update(id: string, data: Partial<Fatura> | FormData): Promise<Fatura> {
     return pb.collection('faturas').update<Fatura>(id, data)
+  },
+
+  async anexarBoletoPdf(id: string, file: File): Promise<Fatura> {
+    const formData = new FormData()
+    formData.append('boleto_pdf', file)
+    return pb.collection('faturas').update<Fatura>(id, formData, {
+      expand: 'cliente_id,contrato_id',
+    })
+  },
+
+  async removerBoletoPdf(id: string): Promise<Fatura> {
+    return pb
+      .collection('faturas')
+      .update<Fatura>(id, { boleto_pdf: null }, { expand: 'cliente_id,contrato_id' })
+  },
+
+  getBoletoPdfUrl(fatura: Fatura): string | null {
+    if (!fatura.boleto_pdf) return null
+    return pb.files.getURL(fatura, fatura.boleto_pdf)
   },
 
   async marcarComoPaga(id: string): Promise<Fatura> {

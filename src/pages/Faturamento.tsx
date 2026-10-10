@@ -17,6 +17,10 @@ import {
   Sparkles,
   CheckCircle2,
   Users,
+  FileText,
+  Upload,
+  Download,
+  Trash2,
 } from 'lucide-react'
 import { faturasService } from '@/services/faturas'
 import { clientesService } from '@/services/clientes'
@@ -78,6 +82,8 @@ export default function Faturamento() {
   const [cobrancasFatura, setCobrancasFatura] = useState<CobrancaBoleto[]>([])
   const [isSendingEmail, setIsSendingEmail] = useState(false)
   const [isGerandoBoleto, setIsGerandoBoleto] = useState(false)
+  const [isUploadingBoleto, setIsUploadingBoleto] = useState(false)
+  const [isRemovingBoleto, setIsRemovingBoleto] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
 
   // KPIs
@@ -546,6 +552,78 @@ export default function Faturamento() {
     }
   }
 
+  // Upload do arquivo PDF do boleto emitido manualmente
+  const handleUploadBoletoPdf = async (e: React.ChangeEvent<HTMLInputElement>, fatura: Fatura) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
+      toast({
+        variant: 'destructive',
+        title: 'Formato inválido',
+        description: 'Por favor, selecione um arquivo em formato PDF.',
+      })
+      e.target.value = ''
+      return
+    }
+
+    if (file.size > 10 * 1024 * 1024) {
+      toast({
+        variant: 'destructive',
+        title: 'Arquivo muito grande',
+        description: 'O arquivo PDF não pode ultrapassar 10MB.',
+      })
+      e.target.value = ''
+      return
+    }
+
+    setIsUploadingBoleto(true)
+    try {
+      const updated = await faturasService.anexarBoletoPdf(fatura.id, file)
+      setSelectedFatura(updated)
+      setFaturas((prev) => prev.map((item) => (item.id === fatura.id ? updated : item)))
+      toast({
+        title: 'Boleto anexado com sucesso!',
+        description: 'O PDF do boleto foi vinculado à fatura e acompanhará os envios por e-mail.',
+      })
+    } catch (err: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Erro ao anexar boleto',
+        description: err.message || 'Não foi possível salvar o arquivo do boleto.',
+      })
+    } finally {
+      setIsUploadingBoleto(false)
+      e.target.value = ''
+    }
+  }
+
+  // Remoção do boleto PDF anexado
+  const handleRemoverBoletoPdf = async (fatura: Fatura) => {
+    if (!confirm('Deseja realmente remover o PDF do boleto anexado a esta fatura?')) {
+      return
+    }
+
+    setIsRemovingBoleto(true)
+    try {
+      const updated = await faturasService.removerBoletoPdf(fatura.id)
+      setSelectedFatura(updated)
+      setFaturas((prev) => prev.map((item) => (item.id === fatura.id ? updated : item)))
+      toast({
+        title: 'Boleto removido',
+        description: 'O arquivo PDF do boleto foi desvinculado da fatura.',
+      })
+    } catch (err: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Erro ao remover boleto',
+        description: err.message || 'Não foi possível remover o arquivo.',
+      })
+    } finally {
+      setIsRemovingBoleto(false)
+    }
+  }
+
   // Disparar envio de fatura por e-mail para o cliente
   const handleEnviarEmailFatura = async (f: Fatura) => {
     const emailDestino = f.expand?.cliente_id?.email
@@ -961,20 +1039,31 @@ export default function Faturamento() {
                     <td className="py-3.5 px-4 font-bold text-gray-900">
                       {formatCurrency(f.valor_total)}
                     </td>
-                    <td className="py-3.5 px-4">
-                      <span
-                        className={`px-2.5 py-0.5 rounded-full text-xs font-semibold ${
-                          f.status === 'paga'
-                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                            : f.status === 'vencida'
-                              ? 'bg-amber-50 text-amber-700 border border-amber-200'
-                              : f.status === 'cancelada'
-                                ? 'bg-red-50 text-red-700 border border-red-200'
-                                : 'bg-blue-50 text-blue-700 border border-blue-200'
-                        }`}
-                      >
-                        {f.status}
-                      </span>
+                    <td className="py-3.5 px-4 space-y-1">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span
+                          className={`px-2.5 py-0.5 rounded-full text-xs font-semibold ${
+                            f.status === 'paga'
+                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                              : f.status === 'vencida'
+                                ? 'bg-amber-50 text-amber-700 border border-amber-200'
+                                : f.status === 'cancelada'
+                                  ? 'bg-red-50 text-red-700 border border-red-200'
+                                  : 'bg-blue-50 text-blue-700 border border-blue-200'
+                          }`}
+                        >
+                          {f.status}
+                        </span>
+                        {f.boleto_pdf && (
+                          <Badge
+                            variant="outline"
+                            className="bg-emerald-50 text-emerald-800 border-emerald-300 text-[10px] px-1.5 py-0 flex items-center gap-1"
+                            title="Boleto bancário em PDF anexado"
+                          >
+                            <FileText className="w-3 h-3 text-emerald-700" /> Boleto
+                          </Badge>
+                        )}
+                      </div>
                     </td>
                     <td className="py-3.5 px-4 text-right">
                       <div className="flex items-center justify-end gap-1">
@@ -1794,6 +1883,117 @@ export default function Faturamento() {
                 </table>
               </div>
 
+              {/* ÁREA DE BOLETO BANCÁRIO (MODO MANUAL) & ANEXO PDF */}
+              <div className="p-4 bg-slate-50 border border-slate-200 rounded-lg text-xs space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <FileText className="w-4 h-4 text-blue-600" />
+                    <span className="font-semibold text-gray-800">
+                      Boleto Bancário (Modo Manual):
+                    </span>
+                  </div>
+                  {selectedFatura.boleto_pdf ? (
+                    <Badge
+                      variant="outline"
+                      className="bg-emerald-50 text-emerald-800 border-emerald-300 flex items-center gap-1 font-semibold"
+                    >
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Boleto anexado
+                    </Badge>
+                  ) : (
+                    <Badge variant="outline" className="bg-gray-100 text-gray-600 border-gray-300">
+                      Nenhum boleto anexado
+                    </Badge>
+                  )}
+                </div>
+
+                <p className="text-[11px] text-gray-500 leading-relaxed">
+                  Emissão manual: emita o boleto no Internet Banking do seu banco (ou sistema
+                  financeiro), anexe o arquivo PDF aqui e ele será encaminhado automaticamente junto
+                  à fatura no e-mail de cobrança do cliente.
+                </p>
+
+                {/* Bloco do arquivo anexado ou botão de upload */}
+                {selectedFatura.boleto_pdf ? (
+                  <div className="p-3 bg-white rounded-lg border border-emerald-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div className="w-8 h-8 rounded bg-emerald-50 text-emerald-700 flex items-center justify-center shrink-0">
+                        <FileText className="w-4 h-4" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="font-mono text-xs text-gray-800 truncate font-semibold">
+                          {selectedFatura.boleto_pdf}
+                        </p>
+                        <p className="text-[10px] text-emerald-700 font-medium">
+                          Pronto para envio por e-mail e download
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                      {faturasService.getBoletoPdfUrl(selectedFatura) && (
+                        <a
+                          href={faturasService.getBoletoPdfUrl(selectedFatura)!}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold rounded bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 transition-colors"
+                        >
+                          <Download className="w-3.5 h-3.5" /> Abrir / Baixar PDF
+                        </a>
+                      )}
+
+                      {!isClienteUser && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          disabled={isRemovingBoleto}
+                          onClick={() => handleRemoverBoletoPdf(selectedFatura)}
+                          className="h-8 px-2 text-red-600 hover:text-red-800 hover:bg-red-50 text-xs"
+                          title="Remover anexo do boleto"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span className="hidden sm:inline ml-1">
+                            {isRemovingBoleto ? 'Removendo...' : 'Remover'}
+                          </span>
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="p-3 bg-white rounded-lg border border-dashed border-gray-300 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded bg-gray-100 text-gray-500 flex items-center justify-center shrink-0">
+                        <Upload className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <p className="text-xs text-gray-700 font-medium">
+                          Nenhum PDF de boleto anexado a esta fatura
+                        </p>
+                        <p className="text-[10px] text-gray-400">
+                          Formatos aceitos: PDF (tamanho máximo de 10MB)
+                        </p>
+                      </div>
+                    </div>
+
+                    {!isClienteUser && (
+                      <div className="shrink-0">
+                        <label className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md bg-blue-600 hover:bg-blue-700 text-white cursor-pointer transition-colors shadow-xs">
+                          <Upload className="w-3.5 h-3.5" />
+                          <span>{isUploadingBoleto ? 'Enviando PDF...' : 'Anexar Boleto PDF'}</span>
+                          <input
+                            type="file"
+                            accept="application/pdf,.pdf"
+                            disabled={isUploadingBoleto}
+                            onChange={(e) => handleUploadBoletoPdf(e, selectedFatura)}
+                            className="hidden"
+                          />
+                        </label>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
               {/* STATUS DE ENVIO DE E-MAIL E COBRANÇA CORA */}
               <div className="p-3 bg-gray-50 border border-gray-200 rounded-lg text-xs space-y-2">
                 <div className="flex items-center justify-between">
@@ -1821,11 +2021,13 @@ export default function Faturamento() {
                   </p>
                 )}
 
-                {/* Status do Boleto Cora */}
+                {/* Status da Integração Cora (automática) */}
                 <div className="pt-2 border-t border-gray-200 flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <CreditCard className="w-4 h-4 text-purple-600" />
-                    <span className="font-semibold text-gray-800">Cobrança / Boleto Cora:</span>
+                    <span className="font-semibold text-gray-800">
+                      Integração API Cora (opcional):
+                    </span>
                   </div>
                   {coraConfig?.ativo && coraConfig?.client_id ? (
                     <Badge
@@ -1835,11 +2037,8 @@ export default function Faturamento() {
                       Integração Ativa
                     </Badge>
                   ) : (
-                    <Badge
-                      variant="outline"
-                      className="bg-amber-50 text-amber-800 border-amber-300"
-                    >
-                      Cora não configurada
+                    <Badge variant="outline" className="bg-gray-100 text-gray-500 border-gray-200">
+                      Desativada (Modo Manual Ativo)
                     </Badge>
                   )}
                 </div>

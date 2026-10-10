@@ -83,12 +83,31 @@ routerAdd(
 
     // Data de vencimento
     let vencimentoStr = 'À vista / imediato'
+    let dataVencFormatada = ''
     const dataVenc = fatura.getString('data_vencimento')
     if (dataVenc) {
-      vencimentoStr = dataVenc.split('T')[0]
+      const rawDate = dataVenc.split('T')[0]
+      const parts = rawDate.split('-')
+      if (parts.length === 3) {
+        dataVencFormatada = `${parts[2]}/${parts[1]}/${parts[0]}`
+        vencimentoStr = dataVencFormatada
+      } else {
+        vencimentoStr = rawDate
+        dataVencFormatada = rawDate
+      }
     }
 
+    // Verificar se existe boleto PDF anexado na fatura
+    const boletoFileName = fatura.getString('boleto_pdf')
+    const temBoletoAnexo = Boolean(boletoFileName)
+
     const subject = `Fatura ${faturaCodigo} - ${empresaNome} - Ref. ${mesRef}`
+
+    const mensagemBoletoHtml = temBoletoAnexo
+      ? `<div style="background-color: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 6px; padding: 12px 16px; margin: 16px 0; color: #065f46; font-size: 13px;">
+          📄 <strong>Boleto bancário em anexo:</strong> Segue em anexo o arquivo PDF do boleto bancário para pagamento${dataVencFormatada ? ` até <strong>${dataVencFormatada}</strong>` : ''}.
+        </div>`
+      : ''
 
     const htmlBody = `
     <!DOCTYPE html>
@@ -120,6 +139,8 @@ routerAdd(
           <p>Olá, <strong>${clienteNome}</strong>,</p>
           <p>Informamos que a fatura referente ao contrato de locação e serviços de impressão do período <strong>${mesRef}</strong> já está disponível para pagamento.</p>
 
+          ${mensagemBoletoHtml}
+
           <div class="box">
             <div style="font-weight: bold; font-size: 12px; text-transform: uppercase; color: #475569; margin-bottom: 12px;">Resumo da Fatura ${faturaCodigo}</div>
             <div><strong>Cliente:</strong> ${clienteNome}</div>
@@ -147,7 +168,9 @@ routerAdd(
     </html>
   `
 
-    // 5. Envio do E-mail
+    // 5. Envio do E-mail (com anexo do PDF do boleto se existir)
+    let fsys = null
+    let fileReader = null
     try {
       const mailClient = $app.newMailClient()
       const msg = new MailMessage()
@@ -159,6 +182,20 @@ routerAdd(
       msg.subject = subject
       msg.html = htmlBody
 
+      if (temBoletoAnexo) {
+        try {
+          fsys = $app.newFilesystem()
+          const fileKey = fatura.baseFilesPath() + '/' + boletoFileName
+          fileReader = fsys.getReader(fileKey)
+          const anexoNome = `Boleto_Fatura_${fatura.id.slice(0, 8).toUpperCase()}.pdf`
+          msg.attachments = {
+            [anexoNome]: fileReader,
+          }
+        } catch (fileErr) {
+          console.error('Não foi possível ler o arquivo de boleto para anexo no e-mail:', fileErr)
+        }
+      }
+
       mailClient.send(msg)
     } catch (mailErr) {
       console.error('Falha ao disparar e-mail de fatura via PocketBase MailClient:', mailErr)
@@ -167,6 +204,17 @@ routerAdd(
         'Servidor de e-mail (SMTP) não configurado ou indisponível. Detalhes: ' +
           (errDetail || 'Serviço de e-mail não configurado nas configurações do servidor.'),
       )
+    } finally {
+      if (fileReader) {
+        try {
+          fileReader.close()
+        } catch (_) {}
+      }
+      if (fsys) {
+        try {
+          fsys.close()
+        } catch (_) {}
+      }
     }
 
     // 6. Atualizar a fatura registrando o histórico de envio

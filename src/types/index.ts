@@ -183,6 +183,7 @@ export interface Fatura {
   enviada_email_em?: string
   enviada_email_para?: string
   criado_por_user_id?: string
+  boleto_pdf?: string
   created: string
   updated: string
   expand?: {
