@@ -4,15 +4,12 @@ import {
   Package,
   Plus,
   Search,
-  Filter,
   DollarSign,
   AlertTriangle,
-  ArrowUpDown,
   Trash2,
-  ExternalLink,
   Percent,
   TrendingUp,
-  AlertCircle,
+  Pencil,
 } from 'lucide-react'
 import { suprimentosService } from '@/services/suprimentos'
 import { equipamentosService } from '@/services/equipamentos'
@@ -60,9 +57,10 @@ export default function Suprimentos() {
   // Seletor do operador: exibição do lucro em % ou em R$
   const [lucroModo, setLucroModo] = useState<'percentual' | 'valor'>('percentual')
 
-  // Modal Novo Suprimento
+  // Modal Novo/Edição Suprimento
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [editingSuprimento, setEditingSuprimento] = useState<Suprimento | null>(null)
   const [formData, setFormData] = useState({
     equipamento_id: '', // OPCIONAL
     data: new Date().toISOString().split('T')[0],
@@ -70,8 +68,8 @@ export default function Suprimentos() {
     item: '',
     quantidade: 1,
     custo: 100,
-    valor_venda: 150,
-    estoque_minimo: 2,
+    valor_venda: 150 as number | string,
+    estoque_minimo: 2 as number | string,
     observacoes: '',
   })
 
@@ -103,6 +101,7 @@ export default function Suprimentos() {
   useRealtime('equipamentos', () => loadData())
 
   const handleOpenCreate = () => {
+    setEditingSuprimento(null)
     setFormData({
       equipamento_id: '', // Equipamento passa a ser opcional
       data: new Date().toISOString().split('T')[0],
@@ -113,6 +112,27 @@ export default function Suprimentos() {
       valor_venda: 150,
       estoque_minimo: 2,
       observacoes: '',
+    })
+    setIsModalOpen(true)
+  }
+
+  const handleOpenEdit = (suprimento: Suprimento) => {
+    setEditingSuprimento(suprimento)
+    // Extrai data yyyy-MM-dd se vier em ISO
+    const dataFormatada = suprimento.data
+      ? suprimento.data.split('T')[0]
+      : new Date().toISOString().split('T')[0]
+
+    setFormData({
+      equipamento_id: suprimento.equipamento_id || '',
+      data: dataFormatada,
+      tipo: suprimento.tipo,
+      item: suprimento.item || '',
+      quantidade: suprimento.quantidade ?? 0,
+      custo: suprimento.custo ?? 0,
+      valor_venda: suprimento.valor_venda ?? '',
+      estoque_minimo: suprimento.estoque_minimo ?? '',
+      observacoes: suprimento.observacoes || '',
     })
     setIsModalOpen(true)
   }
@@ -128,30 +148,46 @@ export default function Suprimentos() {
       return
     }
 
+    const payload = {
+      equipamento_id: formData.equipamento_id || undefined,
+      data: formData.data ? new Date(formData.data).toISOString() : new Date().toISOString(),
+      tipo: formData.tipo,
+      item: formData.item.trim(),
+      quantidade: Number(formData.quantidade) || 0,
+      custo: Number(formData.custo) || 0,
+      valor_venda:
+        formData.valor_venda !== '' && formData.valor_venda !== undefined
+          ? Number(formData.valor_venda)
+          : undefined,
+      estoque_minimo:
+        formData.estoque_minimo !== '' && formData.estoque_minimo !== undefined
+          ? Number(formData.estoque_minimo)
+          : undefined,
+      observacoes: formData.observacoes,
+    }
+
     setIsSubmitting(true)
     try {
-      await suprimentosService.create({
-        equipamento_id: formData.equipamento_id || undefined,
-        data: new Date(formData.data).toISOString(),
-        tipo: formData.tipo,
-        item: formData.item,
-        quantidade: Number(formData.quantidade),
-        custo: Number(formData.custo),
-        valor_venda: Number(formData.valor_venda) || undefined,
-        estoque_minimo: Number(formData.estoque_minimo) || undefined,
-        observacoes: formData.observacoes,
-      })
-
-      toast({
-        title: 'Suprimento registrado!',
-        description: 'Lançamento adicionado ao estoque/histórico com sucesso.',
-      })
+      if (editingSuprimento) {
+        await suprimentosService.update(editingSuprimento.id, payload)
+        toast({
+          title: 'Suprimento atualizado!',
+          description: 'As alterações foram salvas com sucesso.',
+        })
+      } else {
+        await suprimentosService.create(payload)
+        toast({
+          title: 'Suprimento registrado!',
+          description: 'Lançamento adicionado ao estoque/histórico com sucesso.',
+        })
+      }
       setIsModalOpen(false)
+      setEditingSuprimento(null)
       loadData()
     } catch (err) {
       toast({
         variant: 'destructive',
-        title: 'Erro ao registrar suprimento',
+        title: editingSuprimento ? 'Erro ao atualizar suprimento' : 'Erro ao registrar suprimento',
         description: 'Tente novamente.',
       })
     } finally {
@@ -515,17 +551,28 @@ export default function Suprimentos() {
                         </span>
                       </td>
                       <td className="py-3 px-4 text-right">
-                        {!isOperador && (
+                        <div className="flex items-center justify-end gap-1">
                           <Button
                             variant="ghost"
                             size="sm"
-                            onClick={(e) => handleDelete(s.id, e)}
-                            className="h-7 w-7 p-0 text-red-500 hover:text-red-700 hover:bg-red-50"
-                            title="Excluir"
+                            onClick={() => handleOpenEdit(s)}
+                            className="h-7 w-7 p-0 text-blue-600 hover:text-blue-800 hover:bg-blue-50"
+                            title="Editar suprimento"
                           >
-                            <Trash2 className="w-3.5 h-3.5" />
+                            <Pencil className="w-3.5 h-3.5" />
                           </Button>
-                        )}
+                          {!isOperador && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={(e) => handleDelete(s.id, e)}
+                              className="h-7 w-7 p-0 text-red-500 hover:text-red-700 hover:bg-red-50"
+                              title="Excluir"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </Button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   )
@@ -536,12 +583,19 @@ export default function Suprimentos() {
         </div>
       </div>
 
-      {/* Modal Novo Suprimento */}
-      <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
+      {/* Modal Cadastro/Edição de Suprimento */}
+      <Dialog
+        open={isModalOpen}
+        onOpenChange={(open) => {
+          setIsModalOpen(open)
+          if (!open) setEditingSuprimento(null)
+        }}
+      >
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <Package className="w-5 h-5 text-blue-600" /> Registrar Suprimento / Peça
+              <Package className="w-5 h-5 text-blue-600" />{' '}
+              {editingSuprimento ? 'Editar Suprimento / Peça' : 'Registrar Suprimento / Peça'}
             </DialogTitle>
           </DialogHeader>
 
@@ -629,7 +683,8 @@ export default function Suprimentos() {
                   onChange={(e) =>
                     setFormData({
                       ...formData,
-                      quantidade: parseInt(e.target.value, 10) || 0,
+                      quantidade:
+                        e.target.value === '' ? ('' as any) : parseInt(e.target.value, 10),
                     })
                   }
                   required
@@ -646,9 +701,10 @@ export default function Suprimentos() {
                   onChange={(e) =>
                     setFormData({
                       ...formData,
-                      estoque_minimo: parseInt(e.target.value, 10) || 0,
+                      estoque_minimo: e.target.value === '' ? '' : parseInt(e.target.value, 10),
                     })
                   }
+                  placeholder="Ex: 2"
                 />
               </div>
             </div>
@@ -665,7 +721,7 @@ export default function Suprimentos() {
                   onChange={(e) =>
                     setFormData({
                       ...formData,
-                      custo: parseFloat(e.target.value) || 0,
+                      custo: e.target.value === '' ? ('' as any) : parseFloat(e.target.value),
                     })
                   }
                   required
@@ -683,21 +739,22 @@ export default function Suprimentos() {
                   onChange={(e) =>
                     setFormData({
                       ...formData,
-                      valor_venda: parseFloat(e.target.value) || 0,
+                      valor_venda: e.target.value === '' ? '' : parseFloat(e.target.value),
                     })
                   }
+                  placeholder="Ex: 150.00"
                 />
               </div>
             </div>
 
             {/* Prévia do Lucro */}
-            {formData.valor_venda > 0 && (
+            {Number(formData.valor_venda) > 0 && (
               <div className="p-2.5 rounded-lg bg-gray-50 border border-gray-200 flex items-center justify-between">
                 <span className="text-gray-600 font-medium">Margem de Lucro Estimada:</span>
                 <span className="font-bold text-emerald-700 font-mono">
-                  {formatCurrency(formData.valor_venda - formData.custo)} (
-                  {formData.custo > 0
-                    ? `${(((formData.valor_venda - formData.custo) / formData.custo) * 100).toFixed(1)}%`
+                  {formatCurrency(Number(formData.valor_venda) - (Number(formData.custo) || 0))} (
+                  {Number(formData.custo) > 0
+                    ? `${(((Number(formData.valor_venda) - Number(formData.custo)) / Number(formData.custo)) * 100).toFixed(1)}%`
                     : '100%'}
                   )
                 </span>
@@ -724,7 +781,11 @@ export default function Suprimentos() {
                 disabled={isSubmitting}
                 className="bg-blue-600 hover:bg-blue-700 text-white"
               >
-                {isSubmitting ? 'Salvando...' : 'Gravar Registro'}
+                {isSubmitting
+                  ? 'Salvando...'
+                  : editingSuprimento
+                    ? 'Salvar Alterações'
+                    : 'Gravar Registro'}
               </Button>
             </DialogFooter>
           </form>
