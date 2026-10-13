@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-10T00:45:07.196Z",
+  "generatedAt": "2026-10-13T16:58:32.361Z",
   "collections": [
     {
       "name": "users",
@@ -206,7 +206,7 @@
           "type": "select",
           "required": true,
           "system": false,
-          "selectValues": ["disponivel", "locado", "em_manutencao", "inativo"]
+          "selectValues": ["disponivel", "locado", "em_manutencao", "particular", "inativo"]
         },
         {
           "name": "created",
@@ -227,6 +227,13 @@
           "type": "text",
           "required": false,
           "system": false
+        },
+        {
+          "name": "cliente_id",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "clientes"
         }
       ],
       "indexes": [
@@ -441,7 +448,7 @@
         {
           "name": "servico_id",
           "type": "relation",
-          "required": true,
+          "required": false,
           "system": false,
           "collectionRef": "servicos"
         },
