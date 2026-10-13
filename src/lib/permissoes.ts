@@ -1,4 +1,4 @@
-import { ModuloSistema } from '@/types'
+import { ModuloSistema, UserRole } from '@/types'
 import {
   LayoutGrid,
   Users,
@@ -190,4 +190,43 @@ export function resolverPermissoesUsuario(user: {
   }
 
   return ['ordens_servico']
+}
+
+export function inferirPapelDePermissoes(
+  perms: ModuloSistema[],
+  roleAtual?: UserRole,
+  isCliente?: boolean,
+): UserRole {
+  if (isCliente || roleAtual === 'cliente') return 'cliente'
+
+  // Se o papel foi escolhido explicitamente como técnico, ou coincide com o preset técnico (ou subconjunto com ordens_servico)
+  if (roleAtual === 'tecnico') {
+    return 'tecnico'
+  }
+
+  // Se tem permissões de admin de sistema (usuários e/ou personalização)
+  const temUsuarios = perms.includes('usuarios')
+  const temPersonalizar = perms.includes('personalizar')
+  if (temUsuarios && temPersonalizar) {
+    return 'administrador'
+  }
+
+  // Se o conjunto de permissões é estritamente técnico (apenas ordens_servico, ou ordens_servico + comissoes_metas)
+  const permsSet = new Set(perms)
+  const permsTecnico = new Set(PRESETS_PERMISSOES.tecnico)
+  const isTecnicoExatoOuSubconjunto =
+    perms.length > 0 &&
+    perms.length <= 2 &&
+    perms.includes('ordens_servico') &&
+    perms.every((p) => permsTecnico.has(p))
+
+  if (isTecnicoExatoOuSubconjunto) {
+    return 'tecnico'
+  }
+
+  if (roleAtual === 'administrador') {
+    return 'administrador'
+  }
+
+  return 'operador'
 }

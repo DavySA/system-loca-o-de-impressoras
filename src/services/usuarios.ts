@@ -54,7 +54,14 @@ export const usuariosService = {
   },
 
   async update(id: string, data: Partial<AppUser>): Promise<AppUser> {
-    return pb.collection('users').update<AppUser>(id, data)
+    const payload: Record<string, any> = { ...data }
+    // Normalizar cliente_id: se vazio ou string vazia, enviar null para limpar campo de relação no PocketBase
+    if (payload.cliente_id === '' || payload.cliente_id === undefined) {
+      if ('cliente_id' in data) {
+        payload.cliente_id = null
+      }
+    }
+    return pb.collection('users').update<AppUser>(id, payload)
   },
 
   async resetPasswordByEmail(email: string): Promise<void> {

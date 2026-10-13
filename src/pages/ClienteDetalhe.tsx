@@ -89,6 +89,11 @@ export default function ClienteDetalhe() {
   })
   const [isSubmittingContrato, setIsSubmittingContrato] = useState(false)
 
+  // Modal Vincular Equipamento Direto (Vínculo Inverso)
+  const [isVincularEquipModalOpen, setIsVincularEquipModalOpen] = useState(false)
+  const [selectedEquipamentoParaVincular, setSelectedEquipamentoParaVincular] = useState('')
+  const [isSubmittingVinculoEquip, setIsSubmittingVinculoEquip] = useState(false)
+
   // Modal Edição Cliente
   const [isEditModalOpen, setIsEditModalOpen] = useState(false)
   const [formData, setFormData] = useState({
@@ -240,6 +245,11 @@ export default function ClienteDetalhe() {
         })
       } else {
         await contratosService.create(payload)
+        // Garantir que o equipamento fique com status "locado" e cliente_id preenchido
+        await equipamentosService.update(contratoForm.equipamento_id, {
+          status: 'locado',
+          cliente_id: id,
+        })
         toast({
           title: 'Contrato cadastrado',
           description: 'Novo contrato vinculado ao cliente e equipamento.',
@@ -255,6 +265,71 @@ export default function ClienteDetalhe() {
       })
     } finally {
       setIsSubmittingContrato(false)
+    }
+  }
+
+  const handleOpenVincularEquipamento = () => {
+    // Equipamentos que não estão alocados a outro cliente ou disponíveis/particulares
+    const candidatos = equipamentosDisponiveis.filter(
+      (eq) => eq.cliente_id !== id && eq.status !== 'inativo',
+    )
+    setSelectedEquipamentoParaVincular(candidatos[0]?.id || '')
+    setIsVincularEquipModalOpen(true)
+  }
+
+  const handleSalvarVinculoEquipamento = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!id || !selectedEquipamentoParaVincular) {
+      toast({
+        variant: 'destructive',
+        title: 'Selecione um equipamento',
+        description: 'Escolha o equipamento que deseja vincular a este cliente.',
+      })
+      return
+    }
+
+    setIsSubmittingVinculoEquip(true)
+    try {
+      // 1. Atualizar o equipamento definindo cliente_id = id do cliente e status = 'locado'
+      await equipamentosService.update(selectedEquipamentoParaVincular, {
+        cliente_id: id,
+        status: 'locado',
+      })
+
+      // 2. Se não possuir contrato ativo, criar um contrato simplificado para manter consistência nos dois sentidos
+      const contratosDoEquip = await contratosService.getByEquipamento(
+        selectedEquipamentoParaVincular,
+      )
+      const temContratoAtivo = contratosDoEquip.some((c) => c.status === 'ativo')
+      if (!temContratoAtivo) {
+        await contratosService.create({
+          cliente_id: id,
+          equipamento_id: selectedEquipamentoParaVincular,
+          numero_contrato: 'LOC-' + Math.floor(1000 + Math.random() * 9000),
+          data_inicio: new Date().toISOString(),
+          duracao_meses: 12,
+          modalidade: 'com_franquia',
+          valor_mensal: 450,
+          paginas_contratadas_mensais: 1000,
+          valor_pagina_excedente: 0.08,
+          status: 'ativo',
+        })
+      }
+
+      toast({
+        title: 'Equipamento vinculado com sucesso!',
+        description: 'O equipamento foi definido como "Locado" para este cliente.',
+      })
+      setIsVincularEquipModalOpen(false)
+      loadData()
+    } catch (err: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Erro ao vincular equipamento',
+        description: err.message || 'Não foi possível vincular o equipamento ao cliente.',
+      })
+    } finally {
+      setIsSubmittingVinculoEquip(false)
     }
   }
 
@@ -414,13 +489,23 @@ export default function ClienteDetalhe() {
                   Lista de impressoras alocadas neste cliente e planos vigentes
                 </p>
               </div>
-              <Button
-                size="sm"
-                onClick={handleOpenNewContrato}
-                className="bg-blue-600 hover:bg-blue-700 text-white text-xs flex items-center gap-1"
-              >
-                <Plus className="w-3.5 h-3.5" /> Novo Contrato
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleOpenVincularEquipamento}
+                  className="text-xs flex items-center gap-1 text-blue-700 border-blue-200 hover:bg-blue-50"
+                >
+                  <Printer className="w-3.5 h-3.5" /> Vincular Equipamento
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={handleOpenNewContrato}
+                  className="bg-blue-600 hover:bg-blue-700 text-white text-xs flex items-center gap-1"
+                >
+                  <Plus className="w-3.5 h-3.5" /> Novo Contrato
+                </Button>
+              </div>
             </CardHeader>
             <CardContent>
               {contratos.length === 0 ? (
@@ -1283,6 +1368,67 @@ export default function ClienteDetalhe() {
               </Button>
               <Button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white">
                 Salvar Alterações
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal Vincular Equipamento Existente (Vínculo Inverso) */}
+      <Dialog open={isVincularEquipModalOpen} onOpenChange={setIsVincularEquipModalOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base">
+              <Printer className="w-5 h-5 text-blue-600" />
+              Vincular Equipamento a este Cliente
+            </DialogTitle>
+          </DialogHeader>
+
+          <form onSubmit={handleSalvarVinculoEquipamento} className="space-y-4 pt-2">
+            <div className="p-3 bg-blue-50/60 rounded-lg text-xs text-blue-900 border border-blue-200">
+              <span className="font-semibold block">Cliente Destino:</span>
+              <p className="font-medium">{cliente.nome_razao_social}</p>
+              <p className="text-[11px] text-blue-700 mt-1">
+                Ao salvar, o equipamento selecionado terá o campo <strong>cliente_id</strong>{' '}
+                preenchido e o status atualizado para <strong>"Locado"</strong>.
+              </p>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="equip_select">Equipamento Cadastrado</Label>
+              <Select
+                value={selectedEquipamentoParaVincular}
+                onValueChange={setSelectedEquipamentoParaVincular}
+              >
+                <SelectTrigger id="equip_select" className="h-10 text-xs sm:text-sm">
+                  <SelectValue placeholder="Selecione um equipamento..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {equipamentosDisponiveis
+                    .filter((eq) => eq.cliente_id !== id && eq.status !== 'inativo')
+                    .map((eq) => (
+                      <SelectItem key={eq.id} value={eq.id}>
+                        {eq.marca} {eq.modelo} (S/N: {eq.numero_serie}) [{eq.status}]
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <DialogFooter className="pt-2 gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setIsVincularEquipModalOpen(false)}
+              >
+                Cancelar
+              </Button>
+              <Button
+                type="submit"
+                disabled={isSubmittingVinculoEquip || !selectedEquipamentoParaVincular}
+                className="bg-blue-600 hover:bg-blue-700 text-white"
+              >
+                {isSubmittingVinculoEquip ? 'Vinculando...' : 'Confirmar Vínculo'}
               </Button>
             </DialogFooter>
           </form>

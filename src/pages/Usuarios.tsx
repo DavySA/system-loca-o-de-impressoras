@@ -39,7 +39,12 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import type { AppUser, Cliente, ModuloSistema, UserRole } from '@/types'
-import { TODOS_MODULOS, PRESETS_PERMISSOES, resolverPermissoesUsuario } from '@/lib/permissoes'
+import {
+  TODOS_MODULOS,
+  PRESETS_PERMISSOES,
+  resolverPermissoesUsuario,
+  inferirPapelDePermissoes,
+} from '@/lib/permissoes'
 
 export default function Usuarios() {
   const { toast } = useToast()
@@ -53,12 +58,14 @@ export default function Usuarios() {
   // Modal Criar / Editar Usuário
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [editingUser, setEditingUser] = useState<AppUser | null>(null)
+  const [selectedRole, setSelectedRole] = useState<UserRole>('operador')
   const [isClienteAccount, setIsClienteAccount] = useState(false)
   const [formData, setFormData] = useState({
     name: '',
     email: '',
     cliente_id: '',
     password: '',
+    role: 'operador' as UserRole,
     permissoes: [] as ModuloSistema[],
   })
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -97,12 +104,14 @@ export default function Usuarios() {
   const handleOpenCreate = () => {
     setEditingUser(null)
     setIsClienteAccount(false)
-    // Pré-marcar funções padrão para um novo usuário operador/técnico
+    setSelectedRole('operador')
+    // Pré-marcar funções padrão para um novo usuário operador
     setFormData({
       name: '',
       email: '',
       cliente_id: '',
       password: '',
+      role: 'operador',
       permissoes: [...PRESETS_PERMISSOES.operador],
     })
     setIsModalOpen(true)
@@ -113,6 +122,8 @@ export default function Usuarios() {
     setEditingUser(user)
     const isCli = user.role === 'cliente'
     setIsClienteAccount(isCli)
+    const currentRole: UserRole = user.role || 'operador'
+    setSelectedRole(currentRole)
 
     const resolved = resolverPermissoesUsuario(user)
     setFormData({
@@ -120,6 +131,7 @@ export default function Usuarios() {
       email: user.email,
       cliente_id: user.cliente_id || '',
       password: '',
+      role: currentRole,
       permissoes: isCli ? [...PRESETS_PERMISSOES.cliente] : [...resolved],
     })
     setIsModalOpen(true)
@@ -161,45 +173,75 @@ export default function Usuarios() {
     }))
   }
 
+  const handleRoleChange = (role: UserRole) => {
+    setSelectedRole(role)
+    const isCli = role === 'cliente'
+    setIsClienteAccount(isCli)
+
+    if (role === 'administrador') {
+      setFormData((prev) => ({
+        ...prev,
+        role: 'administrador',
+        permissoes: [...PRESETS_PERMISSOES.administrador],
+        cliente_id: '',
+      }))
+    } else if (role === 'tecnico') {
+      setFormData((prev) => ({
+        ...prev,
+        role: 'tecnico',
+        permissoes: [...PRESETS_PERMISSOES.tecnico],
+        cliente_id: '',
+      }))
+    } else if (role === 'operador') {
+      setFormData((prev) => ({
+        ...prev,
+        role: 'operador',
+        permissoes: [...PRESETS_PERMISSOES.operador],
+        cliente_id: '',
+      }))
+    } else if (role === 'cliente') {
+      setFormData((prev) => ({
+        ...prev,
+        role: 'cliente',
+        permissoes: [...PRESETS_PERMISSOES.cliente],
+        cliente_id: prev.cliente_id || clientes[0]?.id || '',
+      }))
+    }
+  }
+
   const handleApplyPreset = (preset: 'admin' | 'operador' | 'tecnico') => {
     if (isClienteAccount) return
     if (preset === 'admin') {
+      setSelectedRole('administrador')
       setFormData((prev) => ({
         ...prev,
+        role: 'administrador',
         permissoes: [...PRESETS_PERMISSOES.administrador],
       }))
     } else if (preset === 'operador') {
+      setSelectedRole('operador')
       setFormData((prev) => ({
         ...prev,
+        role: 'operador',
         permissoes: [...PRESETS_PERMISSOES.operador],
       }))
     } else if (preset === 'tecnico') {
+      setSelectedRole('tecnico')
       setFormData((prev) => ({
         ...prev,
+        role: 'tecnico',
         permissoes: [...PRESETS_PERMISSOES.tecnico],
       }))
     }
   }
 
-  // Define o papel que será gravado no banco de acordo com as permissões marcadas
-  const inferRoleFromPermissions = (isCli: boolean, perms: ModuloSistema[]): UserRole => {
-    if (isCli) return 'cliente'
-    const temUsuarios = perms.includes('usuarios')
-    const temPersonalizar = perms.includes('personalizar')
-    const temRelatorios = perms.includes('relatorios')
-
-    // Se tiver acesso a usuários e configurações/personalização, é administrador
-    if (temUsuarios && temPersonalizar) {
-      return 'administrador'
-    }
-
-    // Se só tem ordens de serviço, é técnico
-    if (perms.length === 1 && perms.includes('ordens_servico')) {
-      return 'tecnico'
-    }
-
-    // Se tem outros módulos mas sem admin de usuários, classifica como operador
-    return 'operador'
+  // Define o papel que será gravado no banco de acordo com a seleção ou permissões
+  const inferRoleFromPermissions = (
+    isCli: boolean,
+    perms: ModuloSistema[],
+    currentRole: UserRole,
+  ): UserRole => {
+    return inferirPapelDePermissoes(perms, currentRole, isCli)
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -231,16 +273,21 @@ export default function Usuarios() {
       return
     }
 
-    const calculatedRole = inferRoleFromPermissions(isClienteAccount, formData.permissoes)
+    const calculatedRole = inferRoleFromPermissions(
+      isClienteAccount,
+      formData.permissoes,
+      selectedRole,
+    )
     const finalPermissoes = isClienteAccount ? PRESETS_PERMISSOES.cliente : formData.permissoes
 
     setIsSubmitting(true)
     try {
       if (editingUser) {
+        // Se não for cliente, explicitamente passar string vazia ou omitir para que o service envie null
         await usuariosService.update(editingUser.id, {
           name: formData.name,
           role: calculatedRole,
-          cliente_id: isClienteAccount ? formData.cliente_id : undefined,
+          cliente_id: isClienteAccount ? formData.cliente_id : '',
           permissoes: finalPermissoes,
         })
         toast({
@@ -654,57 +701,39 @@ export default function Usuarios() {
               </div>
             </div>
 
-            {/* Alternador de Tipo de Conta: Usuário Interno (Colaborador) vs Cliente Externo */}
-            <div className="p-3.5 rounded-xl border border-gray-200 bg-gray-50/70 space-y-2">
-              <div className="flex items-center justify-between">
+            {/* Seletor Explícito de Perfil (Administrador / Operador / Técnico / Cliente) */}
+            <div className="p-3.5 rounded-xl border border-gray-200 bg-gray-50/70 space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                 <div>
-                  <Label className="text-xs font-bold text-gray-900 block">Tipo de Conta</Label>
+                  <Label className="text-xs font-bold text-gray-900 block">Perfil de Acesso</Label>
                   <p className="text-[11px] text-gray-500">
-                    Selecione se o usuário é um colaborador interno ou um cliente da locadora
+                    Escolha o perfil base do usuário (sincroniza permissões automaticamente)
                   </p>
                 </div>
 
-                <div className="flex items-center gap-2">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant={!isClienteAccount ? 'default' : 'outline'}
-                    className={!isClienteAccount ? 'bg-blue-600 text-white' : 'text-gray-700'}
-                    onClick={() => {
-                      setIsClienteAccount(false)
-                      if (formData.permissoes.length === 0) {
-                        setFormData((prev) => ({
-                          ...prev,
-                          permissoes: [...PRESETS_PERMISSOES.operador],
-                        }))
-                      }
-                    }}
+                <div className="w-full sm:w-56">
+                  <Select
+                    value={selectedRole}
+                    onValueChange={(val: UserRole) => handleRoleChange(val)}
                   >
-                    Colaborador Interno
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant={isClienteAccount ? 'default' : 'outline'}
-                    className={isClienteAccount ? 'bg-emerald-600 text-white' : 'text-gray-700'}
-                    onClick={() => {
-                      setIsClienteAccount(true)
-                      setFormData((prev) => ({
-                        ...prev,
-                        permissoes: [...PRESETS_PERMISSOES.cliente],
-                      }))
-                    }}
-                  >
-                    Cliente Externo
-                  </Button>
+                    <SelectTrigger className="h-9 text-xs sm:text-sm bg-white">
+                      <SelectValue placeholder="Selecione o perfil" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="administrador">Administrador</SelectItem>
+                      <SelectItem value="operador">Operador</SelectItem>
+                      <SelectItem value="tecnico">Técnico</SelectItem>
+                      <SelectItem value="cliente">Cliente (Portal)</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
 
-              {/* Vínculo de Cliente quando for conta de cliente */}
+              {/* Vínculo de Cliente quando for perfil cliente */}
               {isClienteAccount && (
-                <div className="pt-2 border-t border-gray-200 mt-2 space-y-1.5">
+                <div className="pt-2 border-t border-gray-200 mt-1 space-y-1.5">
                   <Label htmlFor="u-cliente" className="text-emerald-900 font-semibold text-xs">
-                    Empresa / Cliente Vinculado
+                    Empresa / Cliente Vinculado <span className="text-red-500">*</span>
                   </Label>
                   <Select
                     value={formData.cliente_id}
@@ -846,7 +875,7 @@ export default function Usuarios() {
                   <span>
                     Papel gerado:{' '}
                     <strong className="text-gray-800 uppercase">
-                      {inferRoleFromPermissions(false, formData.permissoes)}
+                      {inferRoleFromPermissions(false, formData.permissoes, selectedRole)}
                     </strong>
                   </span>
                 </div>

@@ -70,7 +70,8 @@ export default function Equipamentos() {
     contador_monocromatico: 0,
     contador_colorido: 0,
     data_aquisicao: '',
-    status: 'disponivel' as 'disponivel' | 'locado' | 'em_manutencao' | 'inativo',
+    status: 'disponivel' as 'disponivel' | 'locado' | 'em_manutencao' | 'particular' | 'inativo',
+    cliente_id: '',
   })
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -133,6 +134,7 @@ export default function Equipamentos() {
       contador_colorido: 0,
       data_aquisicao: new Date().toISOString().split('T')[0],
       status: 'disponivel',
+      cliente_id: '',
     })
     setFieldErrors({})
     setIsModalOpen(true)
@@ -141,6 +143,7 @@ export default function Equipamentos() {
   const handleOpenEdit = (eq: Equipamento, e: React.MouseEvent) => {
     e.stopPropagation()
     setEditingEquipamento(eq)
+    const clienteVinculadoId = eq.cliente_id || eq.expand?.contrato_atual?.cliente_id || ''
     setFormData({
       marca: eq.marca,
       modelo: eq.modelo,
@@ -150,6 +153,7 @@ export default function Equipamentos() {
       contador_colorido: eq.contador_colorido || 0,
       data_aquisicao: eq.data_aquisicao ? eq.data_aquisicao.split('T')[0] : '',
       status: eq.status,
+      cliente_id: clienteVinculadoId,
     })
     setFieldErrors({})
     setIsModalOpen(true)
@@ -191,6 +195,10 @@ export default function Equipamentos() {
     if (!formData.modelo.trim()) errors.modelo = 'Modelo é obrigatório.'
     if (!formData.numero_serie.trim()) errors.numero_serie = 'Número de série é obrigatório.'
 
+    if (formData.status === 'locado' && !formData.cliente_id) {
+      errors.cliente_id = 'Selecione o cliente para o equipamento locado.'
+    }
+
     if (Object.keys(errors).length > 0) {
       setFieldErrors(errors)
       return
@@ -198,14 +206,26 @@ export default function Equipamentos() {
 
     setIsSubmitting(true)
     try {
+      const payload = {
+        marca: formData.marca,
+        modelo: formData.modelo,
+        numero_serie: formData.numero_serie,
+        numero_patrimonio: formData.numero_patrimonio || undefined,
+        contador_monocromatico: formData.contador_monocromatico,
+        contador_colorido: formData.contador_colorido,
+        data_aquisicao: formData.data_aquisicao || undefined,
+        status: formData.status,
+        cliente_id: formData.status === 'locado' ? formData.cliente_id : '',
+      }
+
       if (editingEquipamento) {
-        await equipamentosService.update(editingEquipamento.id, formData)
+        await equipamentosService.update(editingEquipamento.id, payload)
         toast({
           title: 'Equipamento atualizado',
           description: 'Dados salvos com sucesso.',
         })
       } else {
-        await equipamentosService.create(formData)
+        await equipamentosService.create(payload)
         toast({
           title: 'Equipamento cadastrado',
           description: 'Novo equipamento adicionado ao estoque.',
@@ -267,6 +287,12 @@ export default function Equipamentos() {
         status: 'ativo',
       })
 
+      // Atualizar também o cliente_id no próprio equipamento
+      await equipamentosService.update(selectedEquipamentoForContrato.id, {
+        status: 'locado',
+        cliente_id: contratoForm.cliente_id,
+      })
+
       toast({
         title: 'Contrato vinculado!',
         description: 'O equipamento foi alocado e seu status atualizado para "Locado".',
@@ -315,6 +341,12 @@ export default function Equipamentos() {
         return (
           <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200">
             Em Manutenção
+          </span>
+        )
+      case 'particular':
+        return (
+          <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-purple-50 text-purple-700 border border-purple-200">
+            Particular
           </span>
         )
       case 'inativo':
@@ -385,6 +417,7 @@ export default function Equipamentos() {
                 <SelectItem value="disponivel">Disponível</SelectItem>
                 <SelectItem value="locado">Locado</SelectItem>
                 <SelectItem value="em_manutencao">Em Manutenção</SelectItem>
+                <SelectItem value="particular">Particular</SelectItem>
                 <SelectItem value="inativo">Inativo</SelectItem>
               </SelectContent>
             </Select>
@@ -402,7 +435,10 @@ export default function Equipamentos() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
           {filteredEquipamentos.map((eq) => {
-            const clienteAtual = eq.expand?.contrato_atual?.expand?.cliente_id
+            const clienteAtual =
+              eq.expand?.cliente_id ||
+              eq.expand?.contrato_atual?.expand?.cliente_id ||
+              clientes.find((c) => c.id === eq.cliente_id)
             return (
               <Card
                 key={eq.id}
@@ -449,10 +485,22 @@ export default function Equipamentos() {
                       <Building className="w-4 h-4 text-gray-400 shrink-0" />
                       <div className="min-w-0 flex-1">
                         <span className="text-[10px] text-gray-400 block uppercase font-medium">
-                          Locatário Atual
+                          {eq.status === 'particular'
+                            ? 'Equipamento de Cliente (Particular)'
+                            : 'Locatário Atual'}
                         </span>
                         <p className="font-semibold text-gray-800 truncate">
-                          {clienteAtual?.nome_razao_social || (
+                          {clienteAtual?.nome_razao_social ? (
+                            clienteAtual.nome_razao_social
+                          ) : eq.status === 'particular' ? (
+                            <span className="text-purple-600 font-medium">
+                              Equipamento Particular (Manutenção)
+                            </span>
+                          ) : eq.status === 'locado' ? (
+                            <span className="text-amber-600 font-medium">
+                              Cliente não especificado
+                            </span>
+                          ) : (
                             <span className="text-emerald-600 font-medium">
                               Equipamento Disponível
                             </span>
@@ -616,11 +664,65 @@ export default function Equipamentos() {
                     <SelectItem value="disponivel">Disponível</SelectItem>
                     <SelectItem value="locado">Locado</SelectItem>
                     <SelectItem value="em_manutencao">Em Manutenção</SelectItem>
+                    <SelectItem value="particular">Particular (Cliente)</SelectItem>
                     <SelectItem value="inativo">Inativo</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
             </div>
+
+            {/* Campo obrigatório de Cliente quando status for Locado */}
+            {formData.status === 'locado' && (
+              <div className="p-3 bg-blue-50/70 border border-blue-200 rounded-lg space-y-1.5">
+                <Label htmlFor="cliente_locado" className="text-blue-900 font-semibold text-xs">
+                  Cliente Locatário <span className="text-red-500">*</span>
+                </Label>
+                <Select
+                  value={formData.cliente_id}
+                  onValueChange={(val) => {
+                    setFormData({ ...formData, cliente_id: val })
+                    if (fieldErrors.cliente_id) {
+                      setFieldErrors((prev) => {
+                        const next = { ...prev }
+                        delete next.cliente_id
+                        return next
+                      })
+                    }
+                  }}
+                >
+                  <SelectTrigger
+                    id="cliente_locado"
+                    className={`bg-white ${fieldErrors.cliente_id ? 'border-red-500' : ''}`}
+                  >
+                    <SelectValue placeholder="Selecione o cliente ativo..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {clientes.map((c) => (
+                      <SelectItem key={c.id} value={c.id}>
+                        {c.nome_razao_social} ({c.cidade || 'Sem cidade'})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {fieldErrors.cliente_id && (
+                  <p className="text-xs text-red-600">{fieldErrors.cliente_id}</p>
+                )}
+                <p className="text-[11px] text-blue-700">
+                  O equipamento ficará associado a este cliente no sistema.
+                </p>
+              </div>
+            )}
+
+            {/* Explicação caso Particular */}
+            {formData.status === 'particular' && (
+              <div className="p-2.5 bg-purple-50 border border-purple-200 rounded-lg text-[11px] text-purple-800 space-y-1">
+                <p className="font-semibold">Equipamento Particular (Cliente):</p>
+                <p>
+                  Equipamento de cliente que deu entrada para manutenção avulsa, sem vínculo de
+                  locação e sem cobrança mensal de franquia.
+                </p>
+              </div>
+            )}
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5">

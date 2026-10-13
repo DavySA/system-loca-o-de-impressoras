@@ -182,6 +182,12 @@ export default function EquipamentoDetalhe() {
         status: 'ativo',
       })
 
+      // Atualizar também o cliente_id no equipamento
+      await equipamentosService.update(id, {
+        status: 'locado',
+        cliente_id: contratoForm.cliente_id,
+      })
+
       toast({
         title: 'Contrato vinculado',
         description: 'Equipamento locado com sucesso!',
@@ -208,7 +214,10 @@ export default function EquipamentoDetalhe() {
   if (!equipamento) return null
 
   const contratoAtual = contratos.find((c) => c.status === 'ativo')
-  const clienteAtual = contratoAtual?.expand?.cliente_id
+  const clienteAtual =
+    equipamento.expand?.cliente_id ||
+    contratoAtual?.expand?.cliente_id ||
+    clientes.find((c) => c.id === equipamento.cliente_id)
 
   // Cálculo do Custo Médio por Página:
   // total gasto em suprimentos ÷ total de páginas impressas do equipamento
@@ -222,6 +231,42 @@ export default function EquipamentoDetalhe() {
 
   const custoMedioPorPagina =
     totalPaginasImpressas > 0 ? totalGastoSuprimentos / totalPaginasImpressas : 0
+
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case 'disponivel':
+        return (
+          <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+            Disponível
+          </span>
+        )
+      case 'locado':
+        return (
+          <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200">
+            Locado
+          </span>
+        )
+      case 'em_manutencao':
+        return (
+          <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200">
+            Em Manutenção
+          </span>
+        )
+      case 'particular':
+        return (
+          <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-purple-50 text-purple-700 border border-purple-200">
+            Particular (Cliente)
+          </span>
+        )
+      case 'inativo':
+      default:
+        return (
+          <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-gray-100 text-gray-600 border border-gray-200">
+            Inativo
+          </span>
+        )
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -242,17 +287,7 @@ export default function EquipamentoDetalhe() {
               <h1 className="text-xl sm:text-2xl font-bold text-gray-900 tracking-tight">
                 {equipamento.marca} {equipamento.modelo}
               </h1>
-              <Badge
-                variant={
-                  equipamento.status === 'disponivel'
-                    ? 'outline'
-                    : equipamento.status === 'locado'
-                      ? 'default'
-                      : 'destructive'
-                }
-              >
-                {equipamento.status}
-              </Badge>
+              {getStatusBadge(equipamento.status)}
             </div>
             <div className="flex items-center gap-3 text-xs text-gray-500 font-mono mt-0.5">
               <span>
@@ -325,12 +360,18 @@ export default function EquipamentoDetalhe() {
         </div>
 
         <div className="bg-white rounded-xl p-4 border border-gray-200 shadow-xs">
-          <span className="text-xs font-semibold text-gray-500 uppercase">Status Contratual</span>
+          <span className="text-xs font-semibold text-gray-500 uppercase">Status / Vínculo</span>
           <p className="text-lg font-semibold text-gray-800 mt-1 capitalize">
-            {equipamento.status.replace('_', ' ')}
+            {equipamento.status === 'particular'
+              ? 'Particular (Cliente)'
+              : equipamento.status.replace('_', ' ')}
           </p>
           <span className="text-[11px] text-gray-400 truncate block">
-            {clienteAtual ? clienteAtual.nome_razao_social : 'Em estoque'}
+            {clienteAtual
+              ? clienteAtual.nome_razao_social
+              : equipamento.status === 'particular'
+                ? 'Sem locação / Manutenção'
+                : 'Em estoque'}
           </span>
         </div>
       </div>

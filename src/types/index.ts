@@ -53,13 +53,15 @@ export interface Equipamento {
   contador_monocromatico: number
   contador_colorido: number
   data_aquisicao?: string
-  status: 'disponivel' | 'locado' | 'em_manutencao' | 'inativo'
+  status: 'disponivel' | 'locado' | 'em_manutencao' | 'particular' | 'inativo'
+  cliente_id?: string
   tipo?: string
   colorida?: boolean
   created: string
   updated: string
   expand?: {
     contrato_atual?: Contrato
+    cliente_id?: Cliente
   }
 }
 
@@ -106,7 +108,7 @@ export interface OrdemServico {
   id: string
   cliente_id: string
   equipamento_id: string
-  servico_id: string
+  servico_id?: string
   prioridade: 'baixa' | 'media' | 'alta'
   descricao_problema: string
   data_agendada?: string

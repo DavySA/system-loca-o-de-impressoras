@@ -6,6 +6,7 @@ export const equipamentosService = {
     const list = await pb.collection('equipamentos').getFullList<Equipamento>({
       filter: filter || '',
       sort: 'modelo',
+      expand: 'cliente_id',
     })
 
     // Buscar contratos ativos para popular cliente atual
@@ -28,14 +29,19 @@ export const equipamentosService = {
   },
 
   async getById(id: string): Promise<Equipamento> {
-    const eq = await pb.collection('equipamentos').getOne<Equipamento>(id)
+    const eq = await pb.collection('equipamentos').getOne<Equipamento>(id, {
+      expand: 'cliente_id',
+    })
     try {
       const contrato = await pb
         .collection('contratos')
         .getFirstListItem<Contrato>(`equipamento_id = "${id}" && status = "ativo"`, {
           expand: 'cliente_id',
         })
-      eq.expand = { contrato_atual: contrato }
+      eq.expand = {
+        ...eq.expand,
+        contrato_atual: contrato,
+      }
     } catch {
       // Sem contrato ativo
     }
@@ -43,11 +49,23 @@ export const equipamentosService = {
   },
 
   async create(data: Partial<Equipamento>): Promise<Equipamento> {
-    return pb.collection('equipamentos').create<Equipamento>(data)
+    const payload: Record<string, any> = { ...data }
+    // Normalizar cliente_id vazio para null no PocketBase relation
+    if (!payload.cliente_id) {
+      delete payload.cliente_id
+    }
+    return pb.collection('equipamentos').create<Equipamento>(payload)
   },
 
   async update(id: string, data: Partial<Equipamento>): Promise<Equipamento> {
-    return pb.collection('equipamentos').update<Equipamento>(id, data)
+    const payload: Record<string, any> = { ...data }
+    // Se cliente_id for string vazia ou explicitamente nulo/desvinculado, enviar null para limpar
+    if (payload.cliente_id === '' || payload.cliente_id === undefined) {
+      if ('cliente_id' in data) {
+        payload.cliente_id = null
+      }
+    }
+    return pb.collection('equipamentos').update<Equipamento>(id, payload)
   },
 
   async delete(id: string): Promise<boolean> {

@@ -20,6 +20,7 @@ import { equipamentosService } from '@/services/equipamentos'
 import { servicosService } from '@/services/servicos'
 import { contratosService } from '@/services/contratos'
 import { configuracoesService } from '@/services/configuracoes'
+import { usuariosService } from '@/services/usuarios'
 import { OrdemServicoPrintDialog } from '@/components/OrdemServicoPrintDialog'
 import { formatOSCode, formatDate, formatCurrency } from '@/lib/formatters'
 import { extractFieldErrors } from '@/lib/pocketbase/errors'
@@ -44,7 +45,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import type { OrdemServico, Cliente, Equipamento, Servico } from '@/types'
+import type { OrdemServico, Cliente, Equipamento, Servico, AppUser } from '@/types'
 
 export default function OrdensServico() {
   const navigate = useNavigate()
@@ -59,6 +60,7 @@ export default function OrdensServico() {
   const [clientes, setClientes] = useState<Cliente[]>([])
   const [equipamentos, setEquipamentos] = useState<Equipamento[]>([])
   const [servicos, setServicos] = useState<Servico[]>([])
+  const [tecnicos, setTecnicos] = useState<AppUser[]>([])
   const [isLoading, setIsLoading] = useState(true)
 
   // Estado para impressão direta da listagem
@@ -97,18 +99,28 @@ export default function OrdensServico() {
         osFilter = `cliente_id = "${clienteIdVinculado}"`
       }
 
-      const [osList, clList, eqList, svList, cfg] = await Promise.all([
+      const [osList, clList, eqList, svList, cfg, usersList] = await Promise.all([
         ordensServicoService.getAll(osFilter),
         clientesService.getAll('status = "ativo"'),
         equipamentosService.getAll(),
         servicosService.getAll(),
         configuracoesService.get(),
+        usuariosService.getAll(),
       ])
       setOrdens(osList)
       setClientes(clList)
       setEquipamentos(eqList)
       setServicos(svList)
       setConfigEmpresa(cfg)
+
+      // Filtrar usuários técnicos cadastrados: role === 'tecnico' ou com permissão de ordens_servico e não-cliente
+      const tecs = usersList.filter((u) => {
+        if (u.role === 'cliente') return false
+        if (u.role === 'tecnico') return true
+        if (Array.isArray(u.permissoes) && u.permissoes.includes('ordens_servico')) return true
+        return false
+      })
+      setTecnicos(tecs)
 
       // Checar se veio com state de preselect
       const state = location.state as {
@@ -186,7 +198,7 @@ export default function OrdensServico() {
     setFormData({
       cliente_id: isClienteUser && clienteIdVinculado ? clienteIdVinculado : clientes[0]?.id || '',
       equipamento_id: '',
-      servico_id: servicos[0]?.id || '',
+      servico_id: '', // Tipo de serviço agora é opcional
       prioridade: 'media',
       descricao_problema: '',
       data_agendada: new Date().toISOString().split('T')[0],
@@ -203,7 +215,6 @@ export default function OrdensServico() {
     const errors: Record<string, string> = {}
     if (!formData.cliente_id) errors.cliente_id = 'Selecione um cliente.'
     if (!formData.equipamento_id) errors.equipamento_id = 'Selecione um equipamento.'
-    if (!formData.servico_id) errors.servico_id = 'Selecione o tipo de serviço.'
     if (!formData.descricao_problema.trim()) {
       errors.descricao_problema = 'Descrição do problema é obrigatória.'
     }
@@ -247,17 +258,28 @@ export default function OrdensServico() {
 
     setIsSubmitting(true)
     try {
+      // Localizar se o técnico responsável selecionado é um usuário
+      const tecUser = tecnicos.find(
+        (t) =>
+          (t.name || t.email) === formData.tecnico_responsavel ||
+          t.id === formData.tecnico_responsavel,
+      )
+
       const novaOS = await ordensServicoService.create(
         {
           cliente_id: formData.cliente_id,
           equipamento_id: formData.equipamento_id,
-          servico_id: formData.servico_id,
+          servico_id:
+            formData.servico_id && formData.servico_id !== 'nenhum'
+              ? formData.servico_id
+              : undefined,
           prioridade: formData.prioridade,
           descricao_problema: formData.descricao_problema,
           data_agendada: formData.data_agendada
             ? new Date(formData.data_agendada).toISOString()
             : undefined,
-          tecnico_responsavel: formData.tecnico_responsavel,
+          tecnico_responsavel: tecUser?.name || formData.tecnico_responsavel || undefined,
+          tecnico_user_id: tecUser?.id || undefined,
           status: 'aberta',
         },
         user?.name || 'Administrador',
@@ -595,19 +617,22 @@ export default function OrdensServico() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-1.5">
                 <Label htmlFor="os-serv">
-                  Tipo de Serviço <span className="text-red-500">*</span>
+                  Tipo de Serviço <span className="text-gray-400 font-normal">(Opcional)</span>
                 </Label>
                 <Select
-                  value={formData.servico_id}
-                  onValueChange={(val) => setFormData({ ...formData, servico_id: val })}
+                  value={formData.servico_id || 'nenhum'}
+                  onValueChange={(val) =>
+                    setFormData({ ...formData, servico_id: val === 'nenhum' ? '' : val })
+                  }
                 >
                   <SelectTrigger
                     id="os-serv"
                     className={fieldErrors.servico_id ? 'border-red-500' : ''}
                   >
-                    <SelectValue placeholder="Selecione o serviço" />
+                    <SelectValue placeholder="Sem cobrança / Definir depois" />
                   </SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="nenhum">Nenhum / Sem tarifação de catálogo</SelectItem>
                     {servicos.map((s) => (
                       <SelectItem key={s.id} value={s.id}>
                         {s.nome} ({formatCurrency(s.preco)})
@@ -668,14 +693,38 @@ export default function OrdensServico() {
 
               <div className="space-y-1.5">
                 <Label htmlFor="os-tec">Técnico Responsável</Label>
-                <Input
-                  id="os-tec"
-                  placeholder="Nome do técnico"
-                  value={formData.tecnico_responsavel}
-                  onChange={(e) =>
-                    setFormData({ ...formData, tecnico_responsavel: e.target.value })
-                  }
-                />
+                {tecnicos.length > 0 ? (
+                  <Select
+                    value={formData.tecnico_responsavel || 'nenhum'}
+                    onValueChange={(val) =>
+                      setFormData({
+                        ...formData,
+                        tecnico_responsavel: val === 'nenhum' ? '' : val,
+                      })
+                    }
+                  >
+                    <SelectTrigger id="os-tec">
+                      <SelectValue placeholder="Selecione o técnico" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="nenhum">A definir</SelectItem>
+                      {tecnicos.map((t) => (
+                        <SelectItem key={t.id} value={t.name || t.email}>
+                          {t.name || t.email} {t.role === 'tecnico' ? '(Técnico)' : ''}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <Input
+                    id="os-tec"
+                    placeholder="Nome do técnico"
+                    value={formData.tecnico_responsavel}
+                    onChange={(e) =>
+                      setFormData({ ...formData, tecnico_responsavel: e.target.value })
+                    }
+                  />
+                )}
               </div>
             </div>
 

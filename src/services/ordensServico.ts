@@ -33,10 +33,14 @@ export const ordensServicoService = {
   },
 
   async create(data: Partial<OrdemServico>, autorNome?: string): Promise<OrdemServico> {
-    const payload = {
+    const payload: Record<string, any> = {
       ...data,
       data_abertura: data.data_abertura || new Date().toISOString(),
       status: data.status || 'aberta',
+    }
+    // servico_id é opcional: se vazio ou undefined, remover ou setar null para não falhar na relação do PocketBase
+    if (!payload.servico_id) {
+      delete payload.servico_id
     }
     const os = await pb.collection('ordens_servico').create<OrdemServico>(payload)
 
@@ -56,7 +60,13 @@ export const ordensServicoService = {
   },
 
   async update(id: string, data: Partial<OrdemServico>): Promise<OrdemServico> {
-    return pb.collection('ordens_servico').update<OrdemServico>(id, data)
+    const payload: Record<string, any> = { ...data }
+    if (payload.servico_id === '' || payload.servico_id === undefined) {
+      if ('servico_id' in data) {
+        payload.servico_id = null
+      }
+    }
+    return pb.collection('ordens_servico').update<OrdemServico>(id, payload)
   },
 
   async getAtualizacoes(osId: string): Promise<AtualizacaoOS[]> {
