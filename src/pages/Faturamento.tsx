@@ -62,6 +62,7 @@ import type {
   CobrancaBoleto,
 } from '@/types'
 import { Mail, Send, CreditCard } from 'lucide-react'
+import { ModalImportarMPrint } from '@/components/ModalImportarMPrint'
 
 export default function Faturamento() {
   const { user } = useAuth()
@@ -97,6 +98,9 @@ export default function Faturamento() {
   const [clienteContratos, setClienteContratos] = useState<Contrato[]>([])
   const [selectedContratoId, setSelectedContratoId] = useState('')
   const [mesReferencia, setMesReferencia] = useState('')
+
+  // Modal Importação MPrint CSV
+  const [isModalMPrintOpen, setIsModalMPrintOpen] = useState(false)
 
   // Modal Faturamento em Lote
   const [isModalLoteOpen, setIsModalLoteOpen] = useState(false)
@@ -888,7 +892,18 @@ export default function Faturamento() {
           </p>
         </div>
         {!isClienteUser && (
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            {!isOperador && (
+              <Button
+                onClick={() => setIsModalMPrintOpen(true)}
+                variant="outline"
+                className="border-emerald-400 text-emerald-800 bg-emerald-50/50 hover:bg-emerald-100/70 flex items-center gap-1.5 font-semibold shadow-xs"
+                title="Importar medições CSV do sistema MPrint e faturar automaticamente"
+              >
+                <FileSpreadsheet className="w-4 h-4 text-emerald-700" /> Importar CSV de Contagem
+                (MPrint)
+              </Button>
+            )}
             {isAdmin && (
               <Button
                 onClick={handleOpenLote}
@@ -1110,6 +1125,18 @@ export default function Faturamento() {
           </table>
         </div>
       </div>
+
+      {/* Modal Importar CSV MPrint */}
+      <ModalImportarMPrint
+        open={isModalMPrintOpen}
+        onOpenChange={setIsModalMPrintOpen}
+        clientes={clientes}
+        equipamentos={equipamentos}
+        contratos={contratos}
+        faturas={faturas}
+        currentUser={user}
+        onSuccess={loadData}
+      />
 
       {/* Modal Gerar Fatura com Cálculo ao Vivo e Leitura de Contadores */}
       <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>

@@ -17,7 +17,7 @@ export const graficaService = {
         .collection('grafica_configuracao')
         .getList<GraficaConfiguracao>(1, 1, {
           sort: '-created',
-          expand: 'equipamentos_lotados_ids',
+          expand: 'equipamentos_lotados_ids,cliente_grafica_id',
         })
       return records.items[0] || null
     } catch {
@@ -26,20 +26,21 @@ export const graficaService = {
   },
 
   async salvarConfiguracao(data: {
+    cliente_grafica_id?: string | null
     equipamentos_lotados_ids: string[]
     observacoes?: string
   }): Promise<GraficaConfiguracao> {
     const existing = await this.getConfiguracao()
+    const payload: Record<string, any> = {
+      equipamentos_lotados_ids: data.equipamentos_lotados_ids,
+      observacoes: data.observacoes || '',
+      cliente_grafica_id: data.cliente_grafica_id ?? null,
+    }
+
     if (existing) {
-      return pb.collection('grafica_configuracao').update<GraficaConfiguracao>(existing.id, {
-        equipamentos_lotados_ids: data.equipamentos_lotados_ids,
-        observacoes: data.observacoes || '',
-      })
+      return pb.collection('grafica_configuracao').update<GraficaConfiguracao>(existing.id, payload)
     } else {
-      return pb.collection('grafica_configuracao').create<GraficaConfiguracao>({
-        equipamentos_lotados_ids: data.equipamentos_lotados_ids,
-        observacoes: data.observacoes || '',
-      })
+      return pb.collection('grafica_configuracao').create<GraficaConfiguracao>(payload)
     }
   },
 

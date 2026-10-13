@@ -359,11 +359,13 @@ export interface GraficaProduto {
 
 export interface GraficaConfiguracao {
   id: string
+  cliente_grafica_id?: string
   equipamentos_lotados_ids: string[]
   observacoes?: string
   created: string
   updated: string
   expand?: {
+    cliente_grafica_id?: Cliente
     equipamentos_lotados_ids?: Equipamento[]
   }
 }

@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-13T17:30:37.072Z",
+  "generatedAt": "2026-10-13T18:03:13.448Z",
   "collections": [
     {
       "name": "users",
@@ -1983,6 +1983,13 @@
           "required": false,
           "system": false,
           "autodateTriggers": ["onCreate", "onUpdate"]
+        },
+        {
+          "name": "cliente_grafica_id",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "clientes"
         }
       ],
       "indexes": []

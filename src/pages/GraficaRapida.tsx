@@ -23,6 +23,7 @@ import {
   Sliders,
   CheckSquare,
   Square,
+  Building2,
 } from 'lucide-react'
 import { graficaService } from '@/services/grafica'
 import { equipamentosService } from '@/services/equipamentos'
@@ -59,12 +60,13 @@ import type {
   GraficaCaixa,
   GraficaCaixaContador,
   GraficaVenda,
+  CategoriaProdutoGrafica,
   Equipamento,
   Suprimento,
-  CategoriaProdutoGrafica,
   ConfiguracoesEmpresa,
+  Cliente,
 } from '@/types'
-
+import { clientesService } from '@/services/clientes'
 export default function GraficaRapida() {
   const { user } = useAuth()
   const { toast } = useToast()
@@ -86,6 +88,23 @@ export default function GraficaRapida() {
 
   // Configuração da Empresa para cabeçalho
   const [configEmpresa, setConfigEmpresa] = useState<ConfiguracoesEmpresa | null>(null)
+
+  // Clientes para vincular à Gráfica Rápida
+  const [todosClientes, setTodosClientes] = useState<Cliente[]>([])
+  const [clienteGraficaId, setClienteGraficaId] = useState<string>('')
+  const [modoCadastroClienteGrafica, setModoCadastroClienteGrafica] = useState<
+    'selecionar' | 'novo'
+  >('selecionar')
+  const [isCadastrandoClienteGrafica, setIsCadastrandoClienteGrafica] = useState(false)
+  const [novoClienteGrafica, setNovoClienteGrafica] = useState({
+    nome_razao_social: '',
+    documento: '',
+    email: '',
+    telefone: '',
+    cidade: '',
+    uf: 'MG',
+    endereco: '',
+  })
 
   // Configuração de Lotação de Equipamentos na Gráfica Rápida
   const [equipamentosLotadosIds, setEquipamentosLotadosIds] = useState<string[]>([])
@@ -185,16 +204,19 @@ export default function GraficaRapida() {
   const loadData = async () => {
     try {
       setIsLoading(true)
-      const [prods, equips, sups, cxAberto, caixas, vendas, cfg, grafCfg] = await Promise.all([
-        graficaService.getProdutos(),
-        equipamentosService.getAll(),
-        suprimentosService.getAll(),
-        graficaService.getCaixaAberto(),
-        graficaService.getCaixas(),
-        graficaService.getVendas(),
-        configuracoesService.get(),
-        graficaService.getConfiguracao(),
-      ])
+      const [prods, equips, sups, cxAberto, caixas, vendas, cfg, grafCfg, clis] = await Promise.all(
+        [
+          graficaService.getProdutos(),
+          equipamentosService.getAll(),
+          suprimentosService.getAll(),
+          graficaService.getCaixaAberto(),
+          graficaService.getCaixas(),
+          graficaService.getVendas(),
+          configuracoesService.get(),
+          graficaService.getConfiguracao(),
+          clientesService.getAll('status = "ativo"'),
+        ],
+      )
 
       setProdutos(prods)
       setEquipamentos(equips)
@@ -202,13 +224,16 @@ export default function GraficaRapida() {
       setCaixaAberto(cxAberto)
       setHistoricoCaixas(caixas)
       setTodasVendas(vendas)
+      setTodosClientes(clis)
       if (cfg) setConfigEmpresa(cfg)
 
       if (grafCfg) {
+        setClienteGraficaId(grafCfg.cliente_grafica_id || '')
         setEquipamentosLotadosIds(grafCfg.equipamentos_lotados_ids || [])
         setObsLotacao(grafCfg.observacoes || '')
       } else {
-        // Fallback: se ainda não houver configuração, usar os equipamentos disponíveis
+        // Fallback: se ainda não houver configuração
+        setClienteGraficaId('')
         const ids = equips.map((e) => e.id)
         setEquipamentosLotadosIds(ids)
       }
@@ -245,6 +270,7 @@ export default function GraficaRapida() {
   useRealtime('grafica_caixa_contadores', () => loadData())
   useRealtime('grafica_vendas', () => loadData())
   useRealtime('grafica_configuracao', () => loadData())
+  useRealtime('clientes', () => loadData())
   useRealtime('suprimentos', () => loadData())
   useRealtime('equipamentos', () => loadData())
   useRealtime('configuracoes_empresa', () => {
@@ -274,17 +300,42 @@ export default function GraficaRapida() {
     }
   }
 
+  // Equipamentos elegíveis: quando há um cliente definido como sendo a gráfica,
+  // listar SOMENTE os equipamentos com status "locado" vinculados a esse cliente.
+  // Caso contrário, lista os equipamentos em locado ou disponíveis.
+  const equipamentosElegiveisParaGrafica = useMemo(() => {
+    if (clienteGraficaId) {
+      return equipamentos.filter(
+        (eq) => eq.cliente_id === clienteGraficaId && eq.status === 'locado',
+      )
+    }
+    // Se nenhum cliente foi definido como gráfica, exibe equipamentos com status locado ou disponivel
+    return equipamentos.filter((eq) => eq.status === 'locado' || eq.status === 'disponivel')
+  }, [equipamentos, clienteGraficaId])
+
   // Lista de equipamentos lotados no ambiente da Gráfica Rápida
   const equipamentosLotados = useMemo(() => {
+    // Se há cliente da gráfica definido, os equipamentos são filtrados pelos locados para ela
+    if (clienteGraficaId) {
+      const locadosDaGrafica = equipamentos.filter(
+        (eq) => eq.cliente_id === clienteGraficaId && eq.status === 'locado',
+      )
+      if (equipamentosLotadosIds.length > 0) {
+        return locadosDaGrafica.filter((eq) => equipamentosLotadosIds.includes(eq.id))
+      }
+      return locadosDaGrafica
+    }
+
     if (equipamentosLotadosIds.length === 0) return equipamentos
     return equipamentos.filter((eq) => equipamentosLotadosIds.includes(eq.id))
-  }, [equipamentos, equipamentosLotadosIds])
+  }, [equipamentos, equipamentosLotadosIds, clienteGraficaId])
 
   // Salvar configuração de lotação da Gráfica Rápida
   const handleSalvarConfigLotacao = async () => {
     try {
       setIsSalvandoLotacao(true)
       await graficaService.salvarConfiguracao({
+        cliente_grafica_id: clienteGraficaId || null,
         equipamentos_lotados_ids: equipamentosLotadosIds,
         observacoes: obsLotacao,
       })
@@ -303,6 +354,59 @@ export default function GraficaRapida() {
     }
   }
 
+  // Cadastrar cliente correspondente inline para ser a gráfica
+  const handleCadastrarNovoClienteGrafica = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!novoClienteGrafica.nome_razao_social.trim()) {
+      toast({
+        variant: 'destructive',
+        title: 'Nome obrigatório',
+        description: 'Informe o nome ou razão social da gráfica.',
+      })
+      return
+    }
+
+    try {
+      setIsCadastrandoClienteGrafica(true)
+      const novo = await clientesService.create({
+        nome_razao_social: novoClienteGrafica.nome_razao_social,
+        documento: novoClienteGrafica.documento,
+        email: novoClienteGrafica.email,
+        telefone: novoClienteGrafica.telefone,
+        cidade: novoClienteGrafica.cidade,
+        uf: novoClienteGrafica.uf,
+        endereco: novoClienteGrafica.endereco,
+        tipo: 'Pessoa Jurídica',
+        status: 'ativo',
+      })
+
+      // Atualizar lista de clientes e selecionar
+      setTodosClientes((prev) => [novo, ...prev])
+      setClienteGraficaId(novo.id)
+      setModoCadastroClienteGrafica('selecionar')
+
+      // Já atualizar a configuração salvando o cliente da gráfica
+      await graficaService.salvarConfiguracao({
+        cliente_grafica_id: novo.id,
+        equipamentos_lotados_ids: equipamentosLotadosIds,
+        observacoes: obsLotacao,
+      })
+
+      toast({
+        title: 'Cliente da Gráfica cadastrado e vinculado!',
+        description: `Agora você pode locar equipamentos para ${novo.nome_razao_social} no módulo Equipamentos para que apareçam aqui.`,
+      })
+    } catch (err: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Erro ao cadastrar cliente da gráfica',
+        description: err.message,
+      })
+    } finally {
+      setIsCadastrandoClienteGrafica(false)
+    }
+  }
+
   const handleToggleEquipamentoLotado = (id: string) => {
     setEquipamentosLotadosIds((prev) =>
       prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id],
@@ -311,8 +415,19 @@ export default function GraficaRapida() {
 
   // Iniciar contadores para abertura Multi-Equipamento
   const handleAbrirModalAbertura = async () => {
-    // Equipamentos elegíveis: os lotados na gráfica (ou todos se nada configurado)
-    const elegiveis = equipamentosLotados.length > 0 ? equipamentosLotados : equipamentos
+    // Equipamentos elegíveis: quando há cliente da gráfica, estritamente os equipamentos locados para ele
+    let elegiveis = equipamentosLotados
+    if (clienteGraficaId) {
+      elegiveis = equipamentos.filter(
+        (eq) => eq.cliente_id === clienteGraficaId && eq.status === 'locado',
+      )
+      if (equipamentosLotadosIds.length > 0) {
+        elegiveis = elegiveis.filter((eq) => equipamentosLotadosIds.includes(eq.id))
+      }
+    } else if (elegiveis.length === 0) {
+      elegiveis = equipamentos
+    }
+
     const elegiveisIds = elegiveis.map((e) => e.id)
     setEquipamentosSelecionadosAbertura(elegiveisIds)
     setSaldoInicialCaixa(100)
@@ -1461,6 +1576,206 @@ export default function GraficaRapida() {
         {/* ---------------- TAB 5: CONFIGURAÇÃO DE LOTAÇÃO (ADMIN) ---------------- */}
         {user?.role === 'administrador' && (
           <TabsContent value="configuracao" className="space-y-4 pt-2">
+            {/* Bloco 1: Definição do Cliente que é a Gráfica Rápida */}
+            <Card className="border border-blue-200 bg-blue-50/20 shadow-xs">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base font-semibold text-gray-900 flex items-center gap-2">
+                  <Building2 className="w-5 h-5 text-blue-600" /> Cliente Vinculado à Gráfica Rápida
+                </CardTitle>
+                <p className="text-xs text-gray-600 mt-0.5">
+                  Defina qual cliente representa a Gráfica Rápida no sistema. Assim, o caixa
+                  multi-equipamento listará automaticamente apenas os equipamentos com status{' '}
+                  <strong className="text-blue-900">"locado"</strong> para esse cliente.
+                </p>
+              </CardHeader>
+              <CardContent className="space-y-4 text-xs">
+                {/* Seleção do modo: Selecionar existente ou Cadastrar inline */}
+                <div className="flex items-center gap-4 border-b pb-3">
+                  <label className="flex items-center gap-2 cursor-pointer font-medium text-gray-800">
+                    <input
+                      type="radio"
+                      name="modoClienteGrafica"
+                      checked={modoCadastroClienteGrafica === 'selecionar'}
+                      onChange={() => setModoCadastroClienteGrafica('selecionar')}
+                      className="text-blue-600 focus:ring-blue-500"
+                    />
+                    Selecionar um cliente já existente no cadastro
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer font-medium text-gray-800">
+                    <input
+                      type="radio"
+                      name="modoClienteGrafica"
+                      checked={modoCadastroClienteGrafica === 'novo'}
+                      onChange={() => setModoCadastroClienteGrafica('novo')}
+                      className="text-blue-600 focus:ring-blue-500"
+                    />
+                    Cadastrar os dados da gráfica agora (criar cliente inline)
+                  </label>
+                </div>
+
+                {modoCadastroClienteGrafica === 'selecionar' ? (
+                  <div className="space-y-3">
+                    <div className="max-w-md space-y-1">
+                      <Label htmlFor="cli-grafica">Cliente que corresponde à Gráfica Rápida</Label>
+                      <Select
+                        value={clienteGraficaId || 'nenhum'}
+                        onValueChange={(val) => {
+                          const novoId = val === 'nenhum' ? '' : val
+                          setClienteGraficaId(novoId)
+                          // Se desmarcar ou mudar, limpar equipamentos lotados não compatíveis
+                          if (!novoId) {
+                            setEquipamentosLotadosIds(equipamentos.map((e) => e.id))
+                          } else {
+                            const locadosDesteCliente = equipamentos
+                              .filter((e) => e.cliente_id === novoId && e.status === 'locado')
+                              .map((e) => e.id)
+                            setEquipamentosLotadosIds(locadosDesteCliente)
+                          }
+                        }}
+                      >
+                        <SelectTrigger id="cli-grafica" className="bg-white">
+                          <SelectValue placeholder="Selecione o cliente que é a Gráfica..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="nenhum">
+                            (Nenhum cliente fixo — exibir equipamentos gerais)
+                          </SelectItem>
+                          {todosClientes.map((c) => (
+                            <SelectItem key={c.id} value={c.id}>
+                              {c.nome_razao_social} {c.documento ? `(${c.documento})` : ''}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {clienteGraficaId && (
+                      <div className="p-3 bg-white rounded-lg border border-blue-200 flex items-center justify-between">
+                        <div>
+                          <p className="font-bold text-gray-900">
+                            {
+                              todosClientes.find((c) => c.id === clienteGraficaId)
+                                ?.nome_razao_social
+                            }
+                          </p>
+                          <p className="text-[11px] text-gray-500">
+                            Equipamentos com status <strong>"locado"</strong> vinculados a este
+                            cliente:{' '}
+                            <strong className="text-blue-700">
+                              {
+                                equipamentos.filter(
+                                  (e) => e.cliente_id === clienteGraficaId && e.status === 'locado',
+                                ).length
+                              }
+                            </strong>
+                          </p>
+                        </div>
+                        <Badge
+                          variant="outline"
+                          className="bg-blue-50 text-blue-700 border-blue-300"
+                        >
+                          Cliente Gráfica Ativo
+                        </Badge>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <form
+                    onSubmit={handleCadastrarNovoClienteGrafica}
+                    className="space-y-3 bg-white p-4 rounded-xl border border-gray-200"
+                  >
+                    <p className="font-semibold text-gray-800 text-xs">
+                      Preencha os dados da Gráfica Rápida para cadastrá-la automaticamente em
+                      Clientes:
+                    </p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <Label htmlFor="nov-nome">Nome / Razão Social da Gráfica *</Label>
+                        <Input
+                          id="nov-nome"
+                          value={novoClienteGrafica.nome_razao_social}
+                          onChange={(e) =>
+                            setNovoClienteGrafica({
+                              ...novoClienteGrafica,
+                              nome_razao_social: e.target.value,
+                            })
+                          }
+                          placeholder="Ex: Gráfica Rápida Express / Balcão Matriz"
+                          required
+                          className="h-8 text-xs"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label htmlFor="nov-doc">CNPJ / CPF</Label>
+                        <Input
+                          id="nov-doc"
+                          value={novoClienteGrafica.documento}
+                          onChange={(e) =>
+                            setNovoClienteGrafica({
+                              ...novoClienteGrafica,
+                              documento: e.target.value,
+                            })
+                          }
+                          placeholder="00.000.000/0001-00"
+                          className="h-8 text-xs font-mono"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label htmlFor="nov-email">E-mail de Contato</Label>
+                        <Input
+                          id="nov-email"
+                          type="email"
+                          value={novoClienteGrafica.email}
+                          onChange={(e) =>
+                            setNovoClienteGrafica({ ...novoClienteGrafica, email: e.target.value })
+                          }
+                          placeholder="contato@grafica.com.br"
+                          className="h-8 text-xs"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label htmlFor="nov-tel">Telefone / WhatsApp</Label>
+                        <Input
+                          id="nov-tel"
+                          value={novoClienteGrafica.telefone}
+                          onChange={(e) =>
+                            setNovoClienteGrafica({
+                              ...novoClienteGrafica,
+                              telefone: e.target.value,
+                            })
+                          }
+                          placeholder="(00) 00000-0000"
+                          className="h-8 text-xs"
+                        />
+                      </div>
+                    </div>
+                    <div className="flex justify-end gap-2 pt-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setModoCadastroClienteGrafica('selecionar')}
+                        className="text-xs h-8"
+                      >
+                        Cancelar
+                      </Button>
+                      <Button
+                        type="submit"
+                        size="sm"
+                        disabled={isCadastrandoClienteGrafica}
+                        className="bg-blue-600 hover:bg-blue-700 text-white text-xs h-8"
+                      >
+                        {isCadastrandoClienteGrafica
+                          ? 'Cadastrando...'
+                          : 'Cadastrar e Vincular Gráfica'}
+                      </Button>
+                    </div>
+                  </form>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Bloco 2: Lotação de Equipamentos */}
             <Card className="border border-gray-200 shadow-xs">
               <CardHeader className="pb-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                 <div>
@@ -1469,9 +1784,9 @@ export default function GraficaRapida() {
                     Rápida
                   </CardTitle>
                   <p className="text-xs text-gray-500 mt-0.5">
-                    Selecione quais impressoras cadastradas em "Equipamentos" estão alocadas
-                    fisicamente no ambiente da gráfica rápida (mono, color, plotters e jatos de
-                    tinta).
+                    {clienteGraficaId
+                      ? 'Listando somente os equipamentos locados para o cliente configurado como Gráfica. Selecione quais participarão do caixa.'
+                      : 'Selecione quais impressoras cadastradas estão alocadas fisicamente no ambiente da gráfica rápida.'}
                   </p>
                 </div>
                 <Button
@@ -1480,7 +1795,7 @@ export default function GraficaRapida() {
                   className="bg-blue-600 hover:bg-blue-700 text-white text-xs h-8"
                 >
                   <CheckCircle2 className="w-3.5 h-3.5 mr-1" />
-                  {isSalvandoLotacao ? 'Salvando...' : 'Salvar Lotação'}
+                  {isSalvandoLotacao ? 'Salvando...' : 'Salvar Configurações'}
                 </Button>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -1490,85 +1805,106 @@ export default function GraficaRapida() {
                   </p>
                   <ul className="list-disc list-inside space-y-0.5 text-[11px] text-blue-800">
                     <li>
-                      Os equipamentos continuam cadastrados e centralizados no módulo{' '}
+                      Ao definir um cliente como a gráfica, apenas os equipamentos com status{' '}
+                      <strong>"locado"</strong> vinculados a esse cliente ficam disponíveis.
+                    </li>
+                    <li>
+                      Caso precise transferir mais impressoras para a gráfica, vincule o cliente da
+                      gráfica e altere o status para "locado" no módulo{' '}
                       <strong>Equipamentos</strong>.
                     </li>
                     <li>
-                      Aqui você apenas define quais deles pertencem ao parque da Gráfica Rápida.
-                    </li>
-                    <li>
-                      Na abertura de caixa, o operador poderá selecionar simultaneamente múltiplos
-                      equipamentos lotados para operação conjunta.
+                      Na abertura de caixa, o operador poderá operar simultaneamente múltiplos
+                      equipamentos lotados para controle individual de contadores.
                     </li>
                   </ul>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                  {equipamentos.map((eq) => {
-                    const isLotado = equipamentosLotadosIds.includes(eq.id)
-                    return (
-                      <div
-                        key={eq.id}
-                        onClick={() => handleToggleEquipamentoLotado(eq.id)}
-                        className={`p-3 rounded-lg border cursor-pointer transition-all ${
-                          isLotado
-                            ? 'bg-blue-50/70 border-blue-400 shadow-2xs'
-                            : 'bg-white border-gray-200 hover:border-gray-300 opacity-75'
-                        }`}
-                      >
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="space-y-1">
-                            <span className="font-bold text-sm text-gray-900 block">
-                              {eq.marca} {eq.modelo}
-                            </span>
-                            <span className="text-[11px] font-mono text-gray-500 block">
-                              S/N: {eq.numero_serie}
-                            </span>
-                            <div className="flex items-center gap-1.5 flex-wrap pt-1">
-                              <Badge
-                                variant="outline"
-                                className="text-[10px] uppercase font-semibold"
-                              >
-                                {eq.tipo || 'Multifuncional'}
-                              </Badge>
-                              <Badge
-                                variant="outline"
-                                className={`text-[10px] ${
-                                  eq.colorida || (eq.contador_colorido || 0) > 0
-                                    ? 'bg-purple-50 text-purple-700 border-purple-200'
-                                    : 'bg-gray-100 text-gray-700 border-gray-300'
-                                }`}
-                              >
-                                {eq.colorida || (eq.contador_colorido || 0) > 0
-                                  ? 'Color'
-                                  : 'Monocromática'}
-                              </Badge>
+                {equipamentosElegiveisParaGrafica.length === 0 ? (
+                  <div className="p-6 text-center border-2 border-dashed rounded-xl bg-gray-50 space-y-2">
+                    <Printer className="w-8 h-8 text-gray-400 mx-auto" />
+                    <p className="text-sm font-semibold text-gray-700">
+                      Nenhum equipamento com status "locado" encontrado para este cliente.
+                    </p>
+                    <p className="text-xs text-gray-500 max-w-md mx-auto">
+                      Vá até o módulo <strong>Equipamentos</strong>, localize a impressora desejada,
+                      edite e atribua o cliente da Gráfica com status "Locado".
+                    </p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {equipamentosElegiveisParaGrafica.map((eq) => {
+                      const isLotado = equipamentosLotadosIds.includes(eq.id)
+                      return (
+                        <div
+                          key={eq.id}
+                          onClick={() => handleToggleEquipamentoLotado(eq.id)}
+                          className={`p-3 rounded-lg border cursor-pointer transition-all ${
+                            isLotado
+                              ? 'bg-blue-50/70 border-blue-400 shadow-2xs'
+                              : 'bg-white border-gray-200 hover:border-gray-300 opacity-75'
+                          }`}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="space-y-1">
+                              <span className="font-bold text-sm text-gray-900 block">
+                                {eq.marca} {eq.modelo}
+                              </span>
+                              <span className="text-[11px] font-mono text-gray-500 block">
+                                S/N: {eq.numero_serie}
+                              </span>
+                              <div className="flex items-center gap-1.5 flex-wrap pt-1">
+                                <Badge
+                                  variant="outline"
+                                  className="text-[10px] uppercase font-semibold"
+                                >
+                                  {eq.tipo || 'Multifuncional'}
+                                </Badge>
+                                <Badge
+                                  variant="outline"
+                                  className={`text-[10px] ${
+                                    eq.colorida || (eq.contador_colorido || 0) > 0
+                                      ? 'bg-purple-50 text-purple-700 border-purple-200'
+                                      : 'bg-gray-100 text-gray-700 border-gray-300'
+                                  }`}
+                                >
+                                  {eq.colorida || (eq.contador_colorido || 0) > 0
+                                    ? 'Color'
+                                    : 'Monocromática'}
+                                </Badge>
+                                <Badge
+                                  variant="outline"
+                                  className="text-[10px] bg-emerald-50 text-emerald-700 border-emerald-200"
+                                >
+                                  Locado
+                                </Badge>
+                              </div>
+                            </div>
+
+                            <div className="pt-0.5">
+                              {isLotado ? (
+                                <CheckSquare className="w-5 h-5 text-blue-600" />
+                              ) : (
+                                <Square className="w-5 h-5 text-gray-400" />
+                              )}
                             </div>
                           </div>
 
-                          <div className="pt-0.5">
-                            {isLotado ? (
-                              <CheckSquare className="w-5 h-5 text-blue-600" />
-                            ) : (
-                              <Square className="w-5 h-5 text-gray-400" />
+                          <div className="mt-2 pt-2 border-t border-gray-200/80 flex items-center justify-between text-[10.5px] font-mono text-gray-600">
+                            <span>
+                              Mono: {(eq.contador_monocromatico || 0).toLocaleString('pt-BR')}
+                            </span>
+                            {(eq.colorida || (eq.contador_colorido || 0) > 0) && (
+                              <span>
+                                Color: {(eq.contador_colorido || 0).toLocaleString('pt-BR')}
+                              </span>
                             )}
                           </div>
                         </div>
-
-                        <div className="mt-2 pt-2 border-t border-gray-200/80 flex items-center justify-between text-[10.5px] font-mono text-gray-600">
-                          <span>
-                            Mono: {(eq.contador_monocromatico || 0).toLocaleString('pt-BR')}
-                          </span>
-                          {(eq.colorida || (eq.contador_colorido || 0) > 0) && (
-                            <span>
-                              Color: {(eq.contador_colorido || 0).toLocaleString('pt-BR')}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
+                      )
+                    })}
+                  </div>
+                )}
 
                 <div className="space-y-1 pt-2">
                   <Label htmlFor="obs-lot">Observações sobre o ambiente da gráfica</Label>
