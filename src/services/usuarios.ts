@@ -55,11 +55,19 @@ export const usuariosService = {
 
   async update(id: string, data: Partial<AppUser>): Promise<AppUser> {
     const payload: Record<string, any> = { ...data }
-    // Normalizar cliente_id: se vazio ou string vazia, enviar null para limpar campo de relação no PocketBase
-    if (payload.cliente_id === '' || payload.cliente_id === undefined) {
+    // Normalizar cliente_id: se vazio ou string vazia, enviar string vazia para limpar campo de relação no PocketBase
+    if (
+      payload.cliente_id === '' ||
+      payload.cliente_id === undefined ||
+      payload.cliente_id === null
+    ) {
       if ('cliente_id' in data) {
-        payload.cliente_id = null
+        payload.cliente_id = ''
       }
+    }
+    // Garantir que permissoes seja sempre um array válido
+    if ('permissoes' in payload && !Array.isArray(payload.permissoes)) {
+      payload.permissoes = []
     }
     return pb.collection('users').update<AppUser>(id, payload)
   },

@@ -19,6 +19,7 @@ import {
 import { usuariosService } from '@/services/usuarios'
 import { clientesService } from '@/services/clientes'
 import { useToast } from '@/hooks/use-toast'
+import { getErrorMessage } from '@/lib/pocketbase/errors'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -283,7 +284,7 @@ export default function Usuarios() {
     setIsSubmitting(true)
     try {
       if (editingUser) {
-        // Se não for cliente, explicitamente passar string vazia ou omitir para que o service envie null
+        // Se não for cliente, passar string vazia para limpar o cliente_id no PocketBase
         await usuariosService.update(editingUser.id, {
           name: formData.name,
           role: calculatedRole,
@@ -292,7 +293,7 @@ export default function Usuarios() {
         })
         toast({
           title: 'Usuário atualizado!',
-          description: 'Funções e acessos salvos com sucesso.',
+          description: 'Funções e perfil de acesso salvos com sucesso.',
         })
       } else {
         await usuariosService.create({
@@ -313,10 +314,11 @@ export default function Usuarios() {
       setIsModalOpen(false)
       loadData()
     } catch (err: any) {
+      const detalheErro = getErrorMessage(err)
       toast({
         variant: 'destructive',
         title: 'Erro ao salvar usuário',
-        description: err.message || 'Verifique se o e-mail já não está cadastrado.',
+        description: detalheErro || err?.message || 'Verifique os dados informados.',
       })
     } finally {
       setIsSubmitting(false)

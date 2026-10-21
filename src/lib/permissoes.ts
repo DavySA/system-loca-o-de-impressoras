@@ -199,11 +199,18 @@ export function inferirPapelDePermissoes(
 ): UserRole {
   if (isCliente || roleAtual === 'cliente') return 'cliente'
 
-  // Se o papel foi escolhido explicitamente como técnico, ou coincide com o preset técnico (ou subconjunto com ordens_servico)
+  // Se o papel foi definido explicitamente, respeitar a escolha do administrador
+  if (roleAtual === 'operador') {
+    return 'operador'
+  }
   if (roleAtual === 'tecnico') {
     return 'tecnico'
   }
+  if (roleAtual === 'administrador') {
+    return 'administrador'
+  }
 
+  // Caso roleAtual não tenha sido definido, inferir pelo conjunto de permissões marcadas:
   // Se tem permissões de admin de sistema (usuários e/ou personalização)
   const temUsuarios = perms.includes('usuarios')
   const temPersonalizar = perms.includes('personalizar')
@@ -212,7 +219,6 @@ export function inferirPapelDePermissoes(
   }
 
   // Se o conjunto de permissões é estritamente técnico (apenas ordens_servico, ou ordens_servico + comissoes_metas)
-  const permsSet = new Set(perms)
   const permsTecnico = new Set(PRESETS_PERMISSOES.tecnico)
   const isTecnicoExatoOuSubconjunto =
     perms.length > 0 &&
@@ -222,10 +228,6 @@ export function inferirPapelDePermissoes(
 
   if (isTecnicoExatoOuSubconjunto) {
     return 'tecnico'
-  }
-
-  if (roleAtual === 'administrador') {
-    return 'administrador'
   }
 
   return 'operador'
