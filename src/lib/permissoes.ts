@@ -160,33 +160,35 @@ export const PRESETS_PERMISSOES = {
   cliente: ['dashboard', 'ordens_servico', 'faturamento', 'meu_contrato'] as ModuloSistema[],
 }
 
-export function resolverPermissoesUsuario(user: {
-  role?: string
-  permissoes?: ModuloSistema[]
-}): ModuloSistema[] {
-  if (!user) return []
+export function resolverPermissoesUsuario(
+  user?: {
+    role?: string
+    permissoes?: ModuloSistema[]
+  } | null,
+): ModuloSistema[] {
+  if (!user || typeof user !== 'object') return []
 
   // Clientes sempre têm permissões restritas e exclusivas ao seu portal
   if (user.role === 'cliente') {
-    return PRESETS_PERMISSOES.cliente
+    return [...PRESETS_PERMISSOES.cliente]
   }
 
   // Administrador tem sempre todas as permissões
   if (user.role === 'administrador') {
-    return PRESETS_PERMISSOES.administrador
+    return [...PRESETS_PERMISSOES.administrador]
   }
 
   // Se tem permissões explícitas salvas
   if (Array.isArray(user.permissoes) && user.permissoes.length > 0) {
-    return user.permissoes
+    return user.permissoes.filter((p): p is ModuloSistema => typeof p === 'string' && Boolean(p))
   }
 
   // Fallbacks de acordo com o papel histórico
   if (user.role === 'operador') {
-    return PRESETS_PERMISSOES.operador
+    return [...PRESETS_PERMISSOES.operador]
   }
   if (user.role === 'tecnico') {
-    return PRESETS_PERMISSOES.tecnico
+    return [...PRESETS_PERMISSOES.tecnico]
   }
 
   return ['ordens_servico']

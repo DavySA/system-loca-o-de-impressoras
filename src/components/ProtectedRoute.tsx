@@ -2,6 +2,7 @@ import React from 'react'
 import { Navigate, Outlet, useLocation } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
 import Layout from '@/components/Layout'
+import { ErrorBoundary } from '@/components/ErrorBoundary'
 
 import type { UserRole, ModuloSistema } from '@/types'
 import { resolverPermissoesUsuario } from '@/lib/permissoes'
@@ -84,7 +85,12 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ allowedRoles, re
 
   return (
     <Layout>
-      <Outlet />
+      <ErrorBoundary
+        fallbackTitle="Falha ao carregar tela"
+        fallbackMessage="Ocorreu um erro inesperado ao renderizar esta página. Clique para tentar novamente."
+      >
+        <Outlet />
+      </ErrorBoundary>
     </Layout>
   )
 }

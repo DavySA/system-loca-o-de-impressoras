@@ -26,27 +26,43 @@ export const usuariosService = {
   },
 
   async create(data: CreateUserData): Promise<AppUser> {
-    const password = data.password || 'TDTech@' + Math.random().toString(36).slice(-8)
+    const rawPass = typeof data.password === 'string' ? data.password.trim() : ''
+    // PocketBase requer no mínimo 8 caracteres para senhas
+    const fallbackPass =
+      'TDTech@' + Math.random().toString(36).slice(-6) + Math.random().toString(36).slice(-4)
+    const password = rawPass.length >= 8 ? rawPass : fallbackPass
+
+    // Normalizar permissoes: garantir array limpo de strings sem duplicatas nem valores falsos
+    const permissoesLimpa = Array.isArray(data.permissoes)
+      ? Array.from(new Set(data.permissoes.filter((p): p is ModuloSistema => Boolean(p))))
+      : []
+
     const payload: Record<string, any> = {
-      email: data.email,
+      email: data.email.trim().toLowerCase(),
       password: password,
       passwordConfirm: password,
-      name: data.name,
+      name: data.name.trim(),
       role: data.role,
-      permissoes: data.permissoes || [],
+      permissoes: permissoesLimpa,
     }
-    if (data.cliente_id) {
-      payload.cliente_id = data.cliente_id
+
+    // Normalizar cliente_id: só envia se houver valor preenchido não-vazio
+    const clienteIdTrimmed = typeof data.cliente_id === 'string' ? data.cliente_id.trim() : ''
+    if (clienteIdTrimmed) {
+      payload.cliente_id = clienteIdTrimmed
+    } else {
+      payload.cliente_id = ''
     }
 
     const record = await pb.collection('users').create<AppUser>(payload)
 
-    // Se for cliente e não tiver senha explícita definida na tela, disparar e-mail de recuperação
-    if (!data.password) {
+    // Se não tiver senha explícita definida na tela pelo admin, disparar e-mail de recuperação
+    if (!rawPass) {
       try {
-        await pb.collection('users').requestPasswordReset(data.email)
+        await pb.collection('users').requestPasswordReset(payload.email)
       } catch (e) {
-        console.warn('Erro ao solicitar reset inicial:', e)
+        // Falha no envio de e-mail nunca deve propagar erro nem quebrar o fluxo de criação
+        console.warn('Aviso: e-mail de definição de senha não enviado pelo servidor:', e)
       }
     }
 
@@ -55,6 +71,14 @@ export const usuariosService = {
 
   async update(id: string, data: Partial<AppUser>): Promise<AppUser> {
     const payload: Record<string, any> = { ...data }
+
+    if (typeof payload.email === 'string') {
+      payload.email = payload.email.trim().toLowerCase()
+    }
+    if (typeof payload.name === 'string') {
+      payload.name = payload.name.trim()
+    }
+
     // Normalizar cliente_id: se vazio ou string vazia, enviar string vazia para limpar campo de relação no PocketBase
     if (
       payload.cliente_id === '' ||
@@ -64,11 +88,21 @@ export const usuariosService = {
       if ('cliente_id' in data) {
         payload.cliente_id = ''
       }
+    } else if (typeof payload.cliente_id === 'string') {
+      payload.cliente_id = payload.cliente_id.trim()
     }
+
     // Garantir que permissoes seja sempre um array válido
-    if ('permissoes' in payload && !Array.isArray(payload.permissoes)) {
-      payload.permissoes = []
+    if ('permissoes' in payload) {
+      if (Array.isArray(payload.permissoes)) {
+        payload.permissoes = Array.from(
+          new Set(payload.permissoes.filter((p): p is ModuloSistema => Boolean(p))),
+        )
+      } else {
+        payload.permissoes = []
+      }
     }
+
     return pb.collection('users').update<AppUser>(id, payload)
   },
 
