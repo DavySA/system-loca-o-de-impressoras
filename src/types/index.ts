@@ -125,6 +125,8 @@ export interface OrdemServico {
   assinatura_nome?: string
   assinatura_cpf?: string
   parecer_tecnico?: string
+  foto_assinada?: string
+  fotos_comprovantes?: string[] | string
   status: 'aberta' | 'em_andamento' | 'aguardando_peca' | 'concluida'
   created: string
   updated: string

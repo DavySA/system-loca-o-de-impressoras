@@ -12,6 +12,8 @@ import {
   User,
   Wrench,
   CheckCircle2,
+  FileCheck,
+  Camera,
 } from 'lucide-react'
 import { ordensServicoService } from '@/services/ordensServico'
 import { clientesService } from '@/services/clientes'
@@ -502,7 +504,22 @@ export default function OrdensServico() {
                     className="hover:bg-gray-50/80 cursor-pointer transition-colors"
                   >
                     <td className="py-3.5 px-4 font-bold text-blue-600 font-mono">
-                      {formatOSCode(os.id)}
+                      <div className="flex items-center gap-1.5">
+                        <span>{formatOSCode(os.id)}</span>
+                        {os.foto_assinada && (
+                          <span title="Foto da O.S. assinada anexada">
+                            <FileCheck className="w-3.5 h-3.5 text-emerald-600" />
+                          </span>
+                        )}
+                        {((Array.isArray(os.fotos_comprovantes) &&
+                          os.fotos_comprovantes.length > 0) ||
+                          (typeof os.fotos_comprovantes === 'string' &&
+                            os.fotos_comprovantes.length > 0)) && (
+                          <span title="Fotos comprobatórias anexadas">
+                            <Camera className="w-3.5 h-3.5 text-blue-600" />
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td className="py-3.5 px-4 font-semibold text-gray-900">
                       {os.expand?.cliente_id?.nome_razao_social || 'Cliente'}

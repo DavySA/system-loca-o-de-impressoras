@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-22T12:11:34.711Z",
+  "generatedAt": "2026-10-22T13:02:24.184Z",
   "collections": [
     {
       "name": "users",
@@ -571,6 +571,18 @@
           "required": false,
           "system": false,
           "collectionRef": "users"
+        },
+        {
+          "name": "foto_assinada",
+          "type": "file",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "fotos_comprovantes",
+          "type": "file",
+          "required": false,
+          "system": false
         }
       ],
       "indexes": [

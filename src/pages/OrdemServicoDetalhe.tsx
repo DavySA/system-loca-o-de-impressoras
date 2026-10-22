@@ -15,6 +15,12 @@ import {
   ExternalLink,
   PackagePlus,
   Trash2,
+  Camera,
+  FileCheck,
+  Upload,
+  Download,
+  Image as ImageIcon,
+  X,
 } from 'lucide-react'
 import { ordensServicoService } from '@/services/ordensServico'
 import { suprimentosService } from '@/services/suprimentos'
@@ -90,11 +96,21 @@ export default function OrdemServicoDetalhe() {
   >('em_andamento')
   const [isSubmittingUpdate, setIsSubmittingUpdate] = useState(false)
 
+  // Uploads de Fotos (O.S. assinada e Fotos comprobatórias)
+  const [isUploadingFotoAssinada, setIsUploadingFotoAssinada] = useState(false)
+  const [isUploadingComprovantes, setIsUploadingComprovantes] = useState(false)
+  const [fotoAmpliadaModal, setFotoAmpliadaModal] = useState<{ url: string; title: string } | null>(
+    null,
+  )
+
   // Modal Confirmação Concluir
   const [concluirModalOpen, setConcluirModalOpen] = useState(false)
   const [concluirComentario, setConcluirComentario] = useState('Serviço finalizado com sucesso.')
   const [tipoAtendimento, setTipoAtendimento] = useState<'contrato' | 'particular'>('contrato')
   const [valorServicoParticular, setValorServicoParticular] = useState<number>(0)
+  const [concluirFotosComprovantes, setConcluirFotosComprovantes] = useState<File[]>([])
+  const [concluirPreviews, setConcluirPreviews] = useState<string[]>([])
+  const [isConcluindoOS, setIsConcluindoOS] = useState(false)
 
   // Modal Relatório de Impressão Dedicado
   const [isPrintDialogOpen, setIsPrintDialogOpen] = useState(false)
@@ -220,8 +236,161 @@ export default function OrdemServicoDetalhe() {
     setIsPrintDialogOpen(true)
   }
 
+  // Uploads diretos de Fotos
+  const handleUploadFotoAssinada = async (file: File) => {
+    if (!id) return
+    if (!file.type.startsWith('image/')) {
+      toast({
+        variant: 'destructive',
+        title: 'Formato inválido',
+        description: 'Selecione uma imagem (JPG, PNG ou WEBP).',
+      })
+      return
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      toast({
+        variant: 'destructive',
+        title: 'Arquivo muito grande',
+        description: 'O tamanho máximo permitido para a foto é de 10MB.',
+      })
+      return
+    }
+
+    setIsUploadingFotoAssinada(true)
+    try {
+      await ordensServicoService.anexarFotoAssinada(id, file)
+      await ordensServicoService.addAtualizacao(
+        id,
+        user?.name || 'Sistema',
+        `Foto da O.S. impressa e assinada anexada (${file.name}).`,
+        ordem?.status || 'em_andamento',
+      )
+      toast({
+        title: 'Foto anexada com sucesso!',
+        description: 'A foto da O.S. impressa e assinada foi salva.',
+      })
+      loadData()
+    } catch (err: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Erro no envio da foto',
+        description: err.message || 'Não foi possível salvar a foto da O.S. assinada.',
+      })
+    } finally {
+      setIsUploadingFotoAssinada(false)
+    }
+  }
+
+  const handleRemoverFotoAssinada = async () => {
+    if (!id) return
+    if (!confirm('Deseja realmente remover a foto da O.S. impressa e assinada?')) return
+    setIsUploadingFotoAssinada(true)
+    try {
+      await ordensServicoService.removerFotoAssinada(id)
+      await ordensServicoService.addAtualizacao(
+        id,
+        user?.name || 'Sistema',
+        'Foto da O.S. impressa e assinada removida.',
+        ordem?.status || 'em_andamento',
+      )
+      toast({
+        title: 'Foto removida',
+        description: 'A foto da O.S. impressa e assinada foi excluída.',
+      })
+      loadData()
+    } catch (err: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Erro ao remover foto',
+        description: err.message || 'Tente novamente.',
+      })
+    } finally {
+      setIsUploadingFotoAssinada(false)
+    }
+  }
+
+  const handleUploadFotosComprovantes = async (files: FileList | null) => {
+    if (!id || !files || files.length === 0) return
+    const fileList: File[] = []
+    for (let i = 0; i < files.length; i++) {
+      const f = files[i]
+      if (!f.type.startsWith('image/')) {
+        toast({
+          variant: 'destructive',
+          title: 'Arquivo não suportado',
+          description: `O arquivo "${f.name}" não é uma imagem válida.`,
+        })
+        continue
+      }
+      if (f.size > 10 * 1024 * 1024) {
+        toast({
+          variant: 'destructive',
+          title: 'Arquivo muito grande',
+          description: `A foto "${f.name}" excede o limite de 10MB.`,
+        })
+        continue
+      }
+      fileList.push(f)
+    }
+
+    if (fileList.length === 0) return
+
+    setIsUploadingComprovantes(true)
+    try {
+      await ordensServicoService.anexarFotosComprovantes(id, fileList)
+      await ordensServicoService.addAtualizacao(
+        id,
+        user?.name || 'Sistema',
+        `${fileList.length} foto(s) comprobatória(s) do serviço anexada(s).`,
+        ordem?.status || 'em_andamento',
+      )
+      toast({
+        title: 'Fotos comprobatórias anexadas!',
+        description: `${fileList.length} imagem(ns) adicionada(s) à O.S.`,
+      })
+      loadData()
+    } catch (err: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Erro ao enviar fotos',
+        description: err.message || 'Não foi possível anexar as fotos comprobatórias.',
+      })
+    } finally {
+      setIsUploadingComprovantes(false)
+    }
+  }
+
+  const handleRemoverFotoComprovante = async (filename: string) => {
+    if (!id) return
+    if (!confirm('Deseja excluir esta foto comprobatória?')) return
+    setIsUploadingComprovantes(true)
+    try {
+      await ordensServicoService.removerFotoComprovante(id, filename)
+      await ordensServicoService.addAtualizacao(
+        id,
+        user?.name || 'Sistema',
+        `Foto comprobatória removida (${filename}).`,
+        ordem?.status || 'em_andamento',
+      )
+      toast({
+        title: 'Foto removida',
+        description: 'A foto comprobatória foi excluída.',
+      })
+      loadData()
+    } catch (err: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Erro ao excluir foto',
+        description: err.message || 'Tente novamente.',
+      })
+    } finally {
+      setIsUploadingComprovantes(false)
+    }
+  }
+
   const handleConfirmarConclusao = async () => {
     if (!id) return
+    setIsConcluindoOS(true)
     try {
       // Calcular valor de peças e total particular se aplicável
       const totalPecasValor = pecasUtilizadas.reduce(
@@ -232,6 +401,11 @@ export default function OrdemServicoDetalhe() {
         tipoAtendimento === 'particular'
           ? (Number(valorServicoParticular) || 0) + totalPecasValor
           : 0
+
+      // Se foram selecionadas fotos comprobatórias no modal de conclusão, enviar via FormData junto ou logo em seguida
+      if (concluirFotosComprovantes.length > 0) {
+        await ordensServicoService.anexarFotosComprovantes(id, concluirFotosComprovantes)
+      }
 
       // Salvar dados técnicos, tipo de atendimento, valores de serviço e peças, técnico vinculado
       await ordensServicoService.update(id, {
@@ -246,23 +420,29 @@ export default function OrdemServicoDetalhe() {
         valor_total_particular: totalParticular,
         tecnico_user_id: user?.id,
       })
-      await ordensServicoService.marcarConcluida(
-        id,
-        user?.name || 'Administrador',
-        concluirComentario,
-      )
+
+      const textoConclusao =
+        concluirFotosComprovantes.length > 0
+          ? `${concluirComentario} (${concluirFotosComprovantes.length} foto(s) comprobatória(s) anexada(s) ao concluir)`
+          : concluirComentario
+
+      await ordensServicoService.marcarConcluida(id, user?.name || 'Administrador', textoConclusao)
       toast({
         title: 'Ordem de Serviço concluída!',
-        description: 'Status alterado para Concluída e dados arquivados.',
+        description: 'Status alterado para Concluída e fotos/dados arquivados com sucesso.',
       })
       setConcluirModalOpen(false)
+      setConcluirFotosComprovantes([])
+      setConcluirPreviews([])
       loadData()
-    } catch (e) {
+    } catch (e: any) {
       toast({
         variant: 'destructive',
         title: 'Erro ao concluir O.S.',
-        description: 'Tente novamente.',
+        description: e.message || 'Tente novamente.',
       })
+    } finally {
+      setIsConcluindoOS(false)
     }
   }
 
@@ -888,6 +1068,289 @@ export default function OrdemServicoDetalhe() {
         )}
       </div>
 
+      {/* SEÇÃO: FOTOS DA ORDEM DE SERVIÇO (O.S. ASSINADA & FOTOS COMPROBATÓRIAS) */}
+      <Card className="border border-gray-200 shadow-xs print:hidden">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base font-semibold text-gray-900 flex items-center gap-2">
+            <Camera className="w-5 h-5 text-blue-600" /> Fotos da Ordem de Serviço
+          </CardTitle>
+          <p className="text-xs text-gray-500 mt-0.5">
+            Anexe a foto da folha física impressa e assinada pelo cliente e as fotos comprobatórias
+            do serviço executado (ambos opcionais).
+          </p>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* 1. Foto da O.S. impressa e assinada */}
+            <div className="p-4 rounded-xl border border-gray-200 bg-gray-50/60 flex flex-col justify-between space-y-3">
+              <div>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <FileCheck className="w-4 h-4 text-blue-600" />
+                    <h4 className="text-sm font-bold text-gray-900">Foto da O.S. Assinada</h4>
+                  </div>
+                  {ordem.foto_assinada ? (
+                    <Badge
+                      variant="outline"
+                      className="bg-emerald-50 text-emerald-700 border-emerald-200 text-[11px]"
+                    >
+                      Anexada
+                    </Badge>
+                  ) : (
+                    <span className="text-[11px] text-gray-400 font-medium">Opcional</span>
+                  )}
+                </div>
+                <p className="text-xs text-gray-500 mt-1">
+                  Foto da via impressa com a assinatura física do recebedor/cliente.
+                </p>
+              </div>
+
+              {ordem.foto_assinada ? (
+                <div className="space-y-3">
+                  <div className="relative group max-w-sm mx-auto rounded-lg border border-gray-200 overflow-hidden bg-white shadow-2xs">
+                    <img
+                      src={ordensServicoService.getFotoAssinadaUrl(ordem) || ''}
+                      alt="Foto da O.S. Assinada"
+                      className="w-full max-h-56 object-cover cursor-pointer group-hover:scale-105 transition-transform duration-200"
+                      onClick={() =>
+                        setFotoAmpliadaModal({
+                          url: ordensServicoService.getFotoAssinadaUrl(ordem) || '',
+                          title: 'Foto da O.S. Impressa e Assinada',
+                        })
+                      }
+                    />
+                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2 pointer-events-none">
+                      <span className="text-white text-xs font-medium px-2 py-1 bg-black/60 rounded">
+                        Clique para ampliar
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-gray-200">
+                    <div className="flex items-center gap-2">
+                      <a
+                        href={ordensServicoService.getFotoAssinadaUrl(ordem) || '#'}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold rounded-lg bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 shadow-2xs"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5 text-blue-600" /> Nova Aba
+                      </a>
+                      <a
+                        href={ordensServicoService.getFotoAssinadaUrl(ordem) || '#'}
+                        download={`os_${formatOSCode(ordem.id)}_assinada.jpg`}
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold rounded-lg bg-blue-600 hover:bg-blue-700 text-white shadow-2xs"
+                      >
+                        <Download className="w-3.5 h-3.5" /> Baixar
+                      </a>
+                    </div>
+
+                    {user?.role !== 'cliente' && ordem.status !== 'concluida' && (
+                      <div className="flex items-center gap-2">
+                        <label className="cursor-pointer inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-lg bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 shadow-2xs">
+                          <Upload className="w-3.5 h-3.5 text-gray-500" /> Substituir
+                          <input
+                            type="file"
+                            accept="image/png,image/jpeg,image/webp"
+                            className="hidden"
+                            disabled={isUploadingFotoAssinada}
+                            onChange={(e) => {
+                              const f = e.target.files?.[0]
+                              if (f) handleUploadFotoAssinada(f)
+                            }}
+                          />
+                        </label>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          disabled={isUploadingFotoAssinada}
+                          onClick={handleRemoverFotoAssinada}
+                          className="h-8 px-2 text-red-600 hover:text-red-700 hover:bg-red-50 text-xs"
+                          title="Remover foto"
+                        >
+                          <Trash2 className="w-3.5 h-3.5 mr-1" /> Remover
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="py-6 px-4 text-center rounded-lg border border-dashed border-gray-300 bg-white space-y-2">
+                  <div className="w-10 h-10 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center mx-auto">
+                    <Camera className="w-5 h-5" />
+                  </div>
+                  <p className="text-xs text-gray-600 font-medium">
+                    Nenhuma foto da O.S. assinada anexada
+                  </p>
+                  <p className="text-[11px] text-gray-400 max-w-xs mx-auto">
+                    Tire ou envie uma foto do papel assinado pelo cliente (JPG, PNG ou WEBP até
+                    10MB).
+                  </p>
+                  {user?.role !== 'cliente' && (
+                    <div className="pt-2">
+                      <label className="cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-blue-600 hover:bg-blue-700 text-white shadow-xs">
+                        <Upload className="w-3.5 h-3.5" />
+                        {isUploadingFotoAssinada
+                          ? 'Enviando foto...'
+                          : 'Anexar Foto da O.S. Assinada'}
+                        <input
+                          type="file"
+                          accept="image/png,image/jpeg,image/webp"
+                          className="hidden"
+                          disabled={isUploadingFotoAssinada}
+                          onChange={(e) => {
+                            const f = e.target.files?.[0]
+                            if (f) handleUploadFotoAssinada(f)
+                          }}
+                        />
+                      </label>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* 2. Fotos Comprobatórias (Múltiplas) */}
+            <div className="p-4 rounded-xl border border-gray-200 bg-gray-50/60 flex flex-col justify-between space-y-3">
+              <div>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <ImageIcon className="w-4 h-4 text-blue-600" />
+                    <h4 className="text-sm font-bold text-gray-900">Fotos Comprobatórias</h4>
+                  </div>
+                  {ordensServicoService.getFotosComprovantesUrls(ordem).length > 0 ? (
+                    <Badge
+                      variant="outline"
+                      className="bg-blue-50 text-blue-700 border-blue-200 text-[11px]"
+                    >
+                      {ordensServicoService.getFotosComprovantesUrls(ordem).length} foto(s)
+                    </Badge>
+                  ) : (
+                    <span className="text-[11px] text-gray-400 font-medium">Opcional</span>
+                  )}
+                </div>
+                <p className="text-xs text-gray-500 mt-1">
+                  Fotos do equipamento, peças substituídas ou serviço concluído (aceita múltiplos
+                  envios).
+                </p>
+              </div>
+
+              {ordensServicoService.getFotosComprovantesUrls(ordem).length > 0 ? (
+                <div className="space-y-3">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-60 overflow-y-auto p-1">
+                    {ordensServicoService.getFotosComprovantesUrls(ordem).map((item, idx) => (
+                      <div
+                        key={item.filename}
+                        className="group relative rounded-lg border border-gray-200 bg-white overflow-hidden shadow-2xs"
+                      >
+                        <img
+                          src={item.url}
+                          alt={`Comprovante ${idx + 1}`}
+                          className="w-full h-24 object-cover cursor-pointer group-hover:scale-105 transition-transform duration-200"
+                          onClick={() =>
+                            setFotoAmpliadaModal({
+                              url: item.url,
+                              title: `Foto Comprobatória #${idx + 1}`,
+                            })
+                          }
+                        />
+                        <div className="p-1.5 flex items-center justify-between bg-white border-t border-gray-100 text-[10px]">
+                          <span
+                            className="text-gray-500 font-mono truncate max-w-[70px]"
+                            title={item.filename}
+                          >
+                            #{idx + 1}
+                          </span>
+                          <div className="flex items-center gap-1">
+                            <a
+                              href={item.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-blue-600 hover:text-blue-800 p-0.5"
+                              title="Abrir em nova aba"
+                            >
+                              <ExternalLink className="w-3 h-3" />
+                            </a>
+                            <a
+                              href={item.url}
+                              download={`comprovante_${idx + 1}.jpg`}
+                              className="text-gray-600 hover:text-gray-800 p-0.5"
+                              title="Baixar imagem"
+                            >
+                              <Download className="w-3 h-3" />
+                            </a>
+                            {user?.role !== 'cliente' && ordem.status !== 'concluida' && (
+                              <button
+                                type="button"
+                                onClick={() => handleRemoverFotoComprovante(item.filename)}
+                                disabled={isUploadingComprovantes}
+                                className="text-red-500 hover:text-red-700 p-0.5"
+                                title="Remover esta foto"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {user?.role !== 'cliente' && ordem.status !== 'concluida' && (
+                    <div className="pt-2 border-t border-gray-200 flex justify-end">
+                      <label className="cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-blue-600 hover:bg-blue-700 text-white shadow-xs">
+                        <Upload className="w-3.5 h-3.5" />
+                        {isUploadingComprovantes ? 'Enviando...' : 'Adicionar Mais Fotos'}
+                        <input
+                          type="file"
+                          multiple
+                          accept="image/png,image/jpeg,image/webp"
+                          className="hidden"
+                          disabled={isUploadingComprovantes}
+                          onChange={(e) => handleUploadFotosComprovantes(e.target.files)}
+                        />
+                      </label>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="py-6 px-4 text-center rounded-lg border border-dashed border-gray-300 bg-white space-y-2">
+                  <div className="w-10 h-10 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center mx-auto">
+                    <ImageIcon className="w-5 h-5" />
+                  </div>
+                  <p className="text-xs text-gray-600 font-medium">
+                    Nenhuma foto comprobatória anexada
+                  </p>
+                  <p className="text-[11px] text-gray-400 max-w-xs mx-auto">
+                    Adicione fotos do estado da máquina ou do reparo executado (JPG, PNG ou WEBP até
+                    10MB).
+                  </p>
+                  {user?.role !== 'cliente' && (
+                    <div className="pt-2">
+                      <label className="cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-blue-600 hover:bg-blue-700 text-white shadow-xs">
+                        <Upload className="w-3.5 h-3.5" />
+                        {isUploadingComprovantes
+                          ? 'Enviando fotos...'
+                          : 'Adicionar Fotos Comprobatórias'}
+                        <input
+                          type="file"
+                          multiple
+                          accept="image/png,image/jpeg,image/webp"
+                          className="hidden"
+                          disabled={isUploadingComprovantes}
+                          onChange={(e) => handleUploadFotosComprovantes(e.target.files)}
+                        />
+                      </label>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Linha do Tempo de Atualizações */}
       <Card className="border border-gray-200 shadow-xs">
         <CardHeader className="pb-3">
@@ -1183,19 +1646,138 @@ export default function OrdemServicoDetalhe() {
                 className="text-xs"
               />
             </div>
+
+            {/* Fotos Comprobatórias ao Concluir */}
+            <div className="p-3 bg-blue-50/50 border border-blue-200 rounded-lg space-y-2">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs font-bold text-gray-900 flex items-center gap-1.5">
+                  <Camera className="w-4 h-4 text-blue-600" /> Fotos Comprobatórias da Conclusão
+                </Label>
+                <span className="text-[10px] text-gray-500 font-medium">Opcional</span>
+              </div>
+              <p className="text-[11px] text-gray-500">
+                Anexe fotos do equipamento funcionando, peças substituídas ou ambiente do cliente ao
+                finalizar.
+              </p>
+
+              <div className="pt-1">
+                <label className="cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 shadow-2xs">
+                  <Upload className="w-3.5 h-3.5 text-blue-600" />
+                  Selecionar Fotos (pode marcar várias)
+                  <input
+                    type="file"
+                    multiple
+                    accept="image/png,image/jpeg,image/webp"
+                    className="hidden"
+                    onChange={(e) => {
+                      const files = e.target.files
+                      if (!files) return
+                      const validFiles: File[] = []
+                      const previews: string[] = []
+                      for (let i = 0; i < files.length; i++) {
+                        const f = files[i]
+                        if (f.type.startsWith('image/') && f.size <= 10 * 1024 * 1024) {
+                          validFiles.push(f)
+                          previews.push(URL.createObjectURL(f))
+                        }
+                      }
+                      setConcluirFotosComprovantes((prev) => [...prev, ...validFiles])
+                      setConcluirPreviews((prev) => [...prev, ...previews])
+                    }}
+                  />
+                </label>
+              </div>
+
+              {concluirPreviews.length > 0 && (
+                <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 pt-2">
+                  {concluirPreviews.map((url, idx) => (
+                    <div
+                      key={idx}
+                      className="relative rounded-md border border-gray-200 overflow-hidden group"
+                    >
+                      <img
+                        src={url}
+                        alt={`Preview ${idx + 1}`}
+                        className="w-full h-16 object-cover"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setConcluirFotosComprovantes((prev) => prev.filter((_, i) => i !== idx))
+                          setConcluirPreviews((prev) => prev.filter((_, i) => i !== idx))
+                        }}
+                        className="absolute top-0.5 right-0.5 bg-black/70 hover:bg-red-600 text-white rounded-full p-0.5"
+                        title="Remover"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
 
           <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => setConcluirModalOpen(false)}>
+            <Button
+              variant="outline"
+              disabled={isConcluindoOS}
+              onClick={() => {
+                setConcluirModalOpen(false)
+                setConcluirFotosComprovantes([])
+                setConcluirPreviews([])
+              }}
+            >
               Cancelar
             </Button>
             <Button
               onClick={handleConfirmarConclusao}
+              disabled={isConcluindoOS}
               className="bg-emerald-600 hover:bg-emerald-700 text-white"
             >
-              Confirmar Conclusão
+              {isConcluindoOS ? 'Concluindo...' : 'Confirmar Conclusão'}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal para Visualização Ampliada da Foto */}
+      <Dialog
+        open={!!fotoAmpliadaModal}
+        onOpenChange={(open) => !open && setFotoAmpliadaModal(null)}
+      >
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-hidden p-2 sm:p-4">
+          <DialogHeader className="px-2 pt-2 pb-0">
+            <DialogTitle className="text-sm sm:text-base font-bold text-gray-900 flex items-center justify-between">
+              <span>{fotoAmpliadaModal?.title || 'Visualização da Foto'}</span>
+            </DialogTitle>
+          </DialogHeader>
+          <div className="p-2 flex items-center justify-center bg-gray-950 rounded-lg overflow-hidden max-h-[75vh]">
+            {fotoAmpliadaModal && (
+              <img
+                src={fotoAmpliadaModal.url}
+                alt={fotoAmpliadaModal.title}
+                className="max-h-[70vh] w-auto max-w-full object-contain rounded"
+              />
+            )}
+          </div>
+          <div className="flex items-center justify-end gap-2 pt-2 px-2">
+            <a
+              href={fotoAmpliadaModal?.url || '#'}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 shadow-2xs"
+            >
+              <ExternalLink className="w-3.5 h-3.5 text-blue-600" /> Abrir em Nova Aba
+            </a>
+            <a
+              href={fotoAmpliadaModal?.url || '#'}
+              download="foto_os.jpg"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-blue-600 hover:bg-blue-700 text-white shadow-2xs"
+            >
+              <Download className="w-3.5 h-3.5" /> Baixar Imagem
+            </a>
+          </div>
         </DialogContent>
       </Dialog>
 

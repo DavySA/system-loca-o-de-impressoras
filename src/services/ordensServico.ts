@@ -59,14 +59,76 @@ export const ordensServicoService = {
     return os
   },
 
-  async update(id: string, data: Partial<OrdemServico>): Promise<OrdemServico> {
+  async update(id: string, data: Partial<OrdemServico> | FormData): Promise<OrdemServico> {
+    if (data instanceof FormData) {
+      return pb.collection('ordens_servico').update<OrdemServico>(id, data, {
+        expand: 'cliente_id,equipamento_id,servico_id,tecnico_user_id',
+      })
+    }
     const payload: Record<string, any> = { ...data }
     if (payload.servico_id === '' || payload.servico_id === undefined) {
       if ('servico_id' in data) {
         payload.servico_id = null
       }
     }
-    return pb.collection('ordens_servico').update<OrdemServico>(id, payload)
+    return pb.collection('ordens_servico').update<OrdemServico>(id, payload, {
+      expand: 'cliente_id,equipamento_id,servico_id,tecnico_user_id',
+    })
+  },
+
+  async anexarFotoAssinada(id: string, file: File): Promise<OrdemServico> {
+    const formData = new FormData()
+    formData.append('foto_assinada', file)
+    return pb.collection('ordens_servico').update<OrdemServico>(id, formData, {
+      expand: 'cliente_id,equipamento_id,servico_id,tecnico_user_id',
+    })
+  },
+
+  async removerFotoAssinada(id: string): Promise<OrdemServico> {
+    return pb
+      .collection('ordens_servico')
+      .update<OrdemServico>(
+        id,
+        { foto_assinada: null },
+        { expand: 'cliente_id,equipamento_id,servico_id,tecnico_user_id' },
+      )
+  },
+
+  async anexarFotosComprovantes(id: string, files: File[]): Promise<OrdemServico> {
+    const formData = new FormData()
+    files.forEach((file) => {
+      formData.append('fotos_comprovantes', file)
+    })
+    return pb.collection('ordens_servico').update<OrdemServico>(id, formData, {
+      expand: 'cliente_id,equipamento_id,servico_id,tecnico_user_id',
+    })
+  },
+
+  async removerFotoComprovante(id: string, filename: string): Promise<OrdemServico> {
+    // PocketBase permite remover um arquivo individual de campo múltiplo usando "fotos_comprovantes-"
+    const formData = new FormData()
+    formData.append('fotos_comprovantes-', filename)
+    return pb.collection('ordens_servico').update<OrdemServico>(id, formData, {
+      expand: 'cliente_id,equipamento_id,servico_id,tecnico_user_id',
+    })
+  },
+
+  getFotoAssinadaUrl(ordem: OrdemServico): string | null {
+    if (!ordem.foto_assinada) return null
+    return pb.files.getURL(ordem, ordem.foto_assinada)
+  },
+
+  getFotosComprovantesUrls(ordem: OrdemServico): { filename: string; url: string }[] {
+    if (!ordem.fotos_comprovantes) return []
+    const filenames = Array.isArray(ordem.fotos_comprovantes)
+      ? ordem.fotos_comprovantes
+      : [ordem.fotos_comprovantes]
+    return filenames
+      .filter((fn) => typeof fn === 'string' && fn.length > 0)
+      .map((filename) => ({
+        filename,
+        url: pb.files.getURL(ordem, filename),
+      }))
   },
 
   async getAtualizacoes(osId: string): Promise<AtualizacaoOS[]> {
