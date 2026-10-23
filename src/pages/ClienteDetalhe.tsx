@@ -96,9 +96,12 @@ export default function ClienteDetalhe() {
 
   // Modal Edição Cliente
   const [isEditModalOpen, setIsEditModalOpen] = useState(false)
+  const [usuarioVinculado, setUsuarioVinculado] = useState<any | null>(null)
+  const [isReenviandoSenha, setIsReenviandoSenha] = useState(false)
   const [formData, setFormData] = useState({
     nome_razao_social: '',
     tipo: 'Pessoa Jurídica' as 'Pessoa Jurídica' | 'Pessoa Física',
+    tipo_cliente: 'locacao' as 'locacao' | 'particular',
     documento: '',
     email: '',
     telefone: '',
@@ -130,6 +133,7 @@ export default function ClienteDetalhe() {
       setFormData({
         nome_razao_social: cData.nome_razao_social,
         tipo: cData.tipo,
+        tipo_cliente: cData.tipo_cliente || 'locacao',
         documento: cData.documento || '',
         email: cData.email || '',
         telefone: cData.telefone || '',
@@ -138,6 +142,10 @@ export default function ClienteDetalhe() {
         endereco: cData.endereco || '',
         status: cData.status,
       })
+
+      // Buscar usuário vinculado ao cliente
+      const uVinc = await clientesService.getUsuarioVinculado(cData.id, cData.email)
+      setUsuarioVinculado(uVinc)
     } catch (err) {
       toast({
         variant: 'destructive',
@@ -337,20 +345,52 @@ export default function ClienteDetalhe() {
     e.preventDefault()
     if (!id) return
     try {
+      let updatedCliente: Cliente
       if (contratoArquivo) {
         const data = new FormData()
         Object.entries(formData).forEach(([k, v]) => {
           data.append(k, v)
         })
         data.append('contrato_digital', contratoArquivo)
-        await clientesService.update(id, data)
+        updatedCliente = await clientesService.update(id, data)
       } else {
-        await clientesService.update(id, formData)
+        updatedCliente = await clientesService.update(id, formData)
       }
-      toast({
-        title: 'Cliente atualizado',
-        description: 'Dados salvos com sucesso.',
-      })
+
+      // Sincronizar conta de usuário se for Locação
+      const syncResult = await clientesService.syncUsuarioParaClienteLocacao(updatedCliente)
+
+      if (formData.tipo_cliente === 'locacao') {
+        if (syncResult.created) {
+          if (syncResult.resetEmailSent) {
+            toast({
+              title: 'Cliente atualizado',
+              description: `Conta de usuário criada para ${updatedCliente.email} e link de senha enviado!`,
+            })
+          } else {
+            toast({
+              title: 'Cliente atualizado',
+              description: `Conta de usuário criada para ${updatedCliente.email}. O e-mail de definição de senha não pôde ser enviado agora (servidor SMTP não configurado). Você pode reenviar depois.`,
+            })
+          }
+        } else if (syncResult.alreadyExisted) {
+          toast({
+            title: 'Cliente atualizado',
+            description: `Conta de usuário vinculada ao e-mail ${updatedCliente.email}.`,
+          })
+        } else {
+          toast({
+            title: 'Cliente atualizado',
+            description: 'Dados salvos com sucesso.',
+          })
+        }
+      } else {
+        toast({
+          title: 'Cliente atualizado',
+          description: 'Dados salvos com sucesso.',
+        })
+      }
+
       setIsEditModalOpen(false)
       setContratoArquivo(null)
       loadData()
@@ -360,6 +400,37 @@ export default function ClienteDetalhe() {
         title: 'Erro ao salvar',
         description: 'Não foi possível atualizar o cliente.',
       })
+    }
+  }
+
+  const handleReenviarLinkSenha = async () => {
+    const emailAlvo = usuarioVinculado?.email || cliente?.email
+    if (!emailAlvo) {
+      toast({
+        variant: 'destructive',
+        title: 'E-mail não encontrado',
+        description: 'O cliente não possui e-mail cadastrado.',
+      })
+      return
+    }
+
+    setIsReenviandoSenha(true)
+    try {
+      await clientesService.reenviarLinkSenha(emailAlvo)
+      toast({
+        title: 'Link de senha reenviado!',
+        description: `Enviamos as instruções para ${emailAlvo}.`,
+      })
+    } catch (err: any) {
+      console.warn('Falha no requestPasswordReset:', err)
+      toast({
+        variant: 'destructive',
+        title: 'Não foi possível enviar o e-mail',
+        description:
+          'O servidor de e-mail (SMTP) ainda não está configurado no backend. É possível definir a senha manualmente no menu Usuários.',
+      })
+    } finally {
+      setIsReenviandoSenha(false)
     }
   }
 
@@ -422,6 +493,15 @@ export default function ClienteDetalhe() {
               ) : (
                 <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-gray-100 text-gray-600 border border-gray-200">
                   Inativo
+                </span>
+              )}
+              {cliente.tipo_cliente === 'particular' ? (
+                <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-purple-50 text-purple-700 border border-purple-200">
+                  Particular
+                </span>
+              ) : (
+                <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200">
+                  Locação
                 </span>
               )}
             </div>
@@ -917,11 +997,82 @@ export default function ClienteDetalhe() {
         <TabsContent value="resumo" className="space-y-4">
           <Card className="border border-gray-200 shadow-xs">
             <CardHeader className="pb-3">
-              <CardTitle className="text-base font-semibold text-gray-900">
-                Informações de Contato e Endereço
-              </CardTitle>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="text-base font-semibold text-gray-900">
+                    Informações de Contato, Tipo e Acesso
+                  </CardTitle>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    Dados cadastrais e status da conta de usuário no Portal do Cliente
+                  </p>
+                </div>
+              </div>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-6">
+              {/* Box de Conta de Usuário Vinculada */}
+              <div className="p-4 rounded-xl border border-gray-200 bg-gray-50/70">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                  <div>
+                    <span className="text-xs font-bold text-gray-900 uppercase tracking-wide block">
+                      Acesso ao Portal do Cliente (Usuário)
+                    </span>
+                    {cliente.tipo_cliente === 'particular' ? (
+                      <p className="text-xs text-gray-500 mt-1">
+                        Este cliente é do tipo <strong>Particular</strong>. Contas de usuário não
+                        são criadas automaticamente para clientes particulares.
+                      </p>
+                    ) : usuarioVinculado ? (
+                      <div className="text-xs text-gray-700 mt-1 space-y-0.5">
+                        <p className="flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" />
+                          Conta ativa:{' '}
+                          <strong className="text-gray-900 font-mono">
+                            {usuarioVinculado.email}
+                          </strong>
+                          <span className="text-gray-500">
+                            ({usuarioVinculado.name || 'Cliente'})
+                          </span>
+                        </p>
+                        <p className="text-[11px] text-gray-500">
+                          Perfil: <strong>Portal do Cliente</strong> (acesso a chamados, faturas e
+                          contrato digital)
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="text-xs text-amber-700 mt-1">
+                        <p>
+                          Nenhuma conta de usuário vinculada encontrada{' '}
+                          {cliente.email
+                            ? `para o e-mail ${cliente.email}.`
+                            : '(cliente sem e-mail).'}
+                        </p>
+                        <p className="text-[11px] text-gray-500 mt-0.5">
+                          Ao editar o cliente e manter "Locação" com um e-mail válido, a conta será
+                          criada automaticamente.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Botão de Reenviar Link de Senha: só aparece para admin, quando cliente é Locação e tem conta vinculada */}
+                  {user?.role === 'administrador' &&
+                    cliente.tipo_cliente !== 'particular' &&
+                    (usuarioVinculado || cliente.email) && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={handleReenviarLinkSenha}
+                        disabled={isReenviandoSenha}
+                        className="text-xs text-blue-700 border-blue-200 hover:bg-blue-50 shrink-0 flex items-center gap-1.5"
+                      >
+                        <Mail className="w-3.5 h-3.5 text-blue-600" />
+                        {isReenviandoSenha ? 'Enviando...' : 'Reenviar link de senha'}
+                      </Button>
+                    )}
+                </div>
+              </div>
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-sm">
                 <div className="space-y-3">
                   <div>
@@ -929,6 +1080,22 @@ export default function ClienteDetalhe() {
                       Razão Social / Nome
                     </span>
                     <p className="text-gray-900 font-medium mt-0.5">{cliente.nome_razao_social}</p>
+                  </div>
+                  <div>
+                    <span className="text-xs font-semibold text-gray-500 uppercase">
+                      Tipo de Cliente
+                    </span>
+                    <div className="mt-1">
+                      {cliente.tipo_cliente === 'particular' ? (
+                        <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-purple-50 text-purple-700 border border-purple-200">
+                          Particular
+                        </span>
+                      ) : (
+                        <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200">
+                          Locação
+                        </span>
+                      )}
+                    </div>
                   </div>
                   <div>
                     <span className="text-xs font-semibold text-gray-500 uppercase">Documento</span>
@@ -955,6 +1122,12 @@ export default function ClienteDetalhe() {
                 </div>
 
                 <div className="space-y-3">
+                  <div>
+                    <span className="text-xs font-semibold text-gray-500 uppercase">
+                      Pessoa (Física / Jurídica)
+                    </span>
+                    <p className="text-gray-900 mt-0.5">{cliente.tipo}</p>
+                  </div>
                   <div>
                     <span className="text-xs font-semibold text-gray-500 uppercase">
                       Cidade / UF
@@ -1235,9 +1408,32 @@ export default function ClienteDetalhe() {
           </DialogHeader>
 
           <form onSubmit={handleUpdateCliente} className="space-y-4 pt-2">
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div className="space-y-1.5">
-                <Label htmlFor="edit-tipo">Tipo</Label>
+                <Label htmlFor="edit-tipo-cliente">Tipo de Cliente</Label>
+                <Select
+                  value={formData.tipo_cliente}
+                  onValueChange={(val: 'locacao' | 'particular') =>
+                    setFormData({ ...formData, tipo_cliente: val })
+                  }
+                >
+                  <SelectTrigger id="edit-tipo-cliente">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="locacao">Locação</SelectItem>
+                    <SelectItem value="particular">Particular</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-[11px] text-gray-500">
+                  {formData.tipo_cliente === 'locacao'
+                    ? 'Vincula usuário e envia link de senha.'
+                    : 'Sem usuário no portal.'}
+                </p>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="edit-tipo">Tipo de Pessoa</Label>
                 <Select
                   value={formData.tipo}
                   onValueChange={(val: 'Pessoa Jurídica' | 'Pessoa Física') =>

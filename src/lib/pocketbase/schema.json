@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-22T13:02:24.184Z",
+  "generatedAt": "2026-10-23T00:16:06.509Z",
   "collections": [
     {
       "name": "users",
@@ -150,6 +150,13 @@
           "type": "file",
           "required": false,
           "system": false
+        },
+        {
+          "name": "tipo_cliente",
+          "type": "select",
+          "required": false,
+          "system": false,
+          "selectValues": ["locacao", "particular"]
         }
       ],
       "indexes": ["CREATE INDEX idx_clientes_status ON clientes (status)"]

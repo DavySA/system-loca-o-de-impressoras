@@ -28,10 +28,13 @@ export interface AppUser {
   }
 }
 
+export type TipoCliente = 'locacao' | 'particular'
+
 export interface Cliente {
   id: string
   nome_razao_social: string
   tipo: 'Pessoa Jurídica' | 'Pessoa Física'
+  tipo_cliente?: TipoCliente
   documento?: string
   email?: string
   telefone?: string

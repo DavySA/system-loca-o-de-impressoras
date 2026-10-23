@@ -57,6 +57,7 @@ export default function Clientes() {
   const [formData, setFormData] = useState({
     nome_razao_social: '',
     tipo: 'Pessoa Jurídica' as 'Pessoa Jurídica' | 'Pessoa Física',
+    tipo_cliente: 'locacao' as 'locacao' | 'particular',
     documento: '',
     email: '',
     telefone: '',
@@ -102,6 +103,7 @@ export default function Clientes() {
     setFormData({
       nome_razao_social: '',
       tipo: 'Pessoa Jurídica',
+      tipo_cliente: 'locacao',
       documento: '',
       email: '',
       telefone: '',
@@ -121,6 +123,7 @@ export default function Clientes() {
     setFormData({
       nome_razao_social: cliente.nome_razao_social,
       tipo: cliente.tipo,
+      tipo_cliente: cliente.tipo_cliente || 'locacao',
       documento: cliente.documento || '',
       email: cliente.email || '',
       telefone: cliente.telefone || '',
@@ -183,33 +186,71 @@ export default function Clientes() {
 
     setIsSubmitting(true)
     try {
+      let savedCliente: Cliente
       if (editingCliente) {
         if (contratoFile) {
           const data = new FormData()
           Object.entries(formData).forEach(([k, v]) => data.append(k, v))
           data.append('contrato_digital', contratoFile)
-          await clientesService.update(editingCliente.id, data)
+          savedCliente = await clientesService.update(editingCliente.id, data)
         } else {
-          await clientesService.update(editingCliente.id, formData)
+          savedCliente = await clientesService.update(editingCliente.id, formData)
         }
-        toast({
-          title: 'Cliente atualizado',
-          description: 'Dados cadastrais salvos com sucesso.',
-        })
       } else {
         if (contratoFile) {
           const data = new FormData()
           Object.entries(formData).forEach(([k, v]) => data.append(k, v))
           data.append('contrato_digital', contratoFile)
-          await pb.collection('clientes').create(data)
+          savedCliente = await pb.collection('clientes').create<Cliente>(data)
         } else {
-          await clientesService.create(formData)
+          savedCliente = await clientesService.create(formData)
         }
+      }
+
+      // Sincronizar criação/vínculo de conta de usuário quando for Locação
+      const syncResult = await clientesService.syncUsuarioParaClienteLocacao(savedCliente)
+
+      // Montar mensagens de feedback amigáveis
+      if (formData.tipo_cliente === 'locacao') {
+        if (syncResult.created) {
+          if (syncResult.resetEmailSent) {
+            toast({
+              title: editingCliente ? 'Cliente atualizado' : 'Cliente cadastrado com sucesso!',
+              description: `Conta de usuário criada para ${savedCliente.email} e link para cadastro de senha enviado por e-mail.`,
+            })
+          } else {
+            toast({
+              title: editingCliente ? 'Cliente atualizado' : 'Cliente cadastrado!',
+              description: `Conta de usuário criada para ${savedCliente.email}. O e-mail de definição de senha não pôde ser enviado agora (servidor SMTP não configurado). Você pode reenviar depois.`,
+            })
+          }
+        } else if (syncResult.alreadyExisted) {
+          if (syncResult.resetEmailSent) {
+            toast({
+              title: editingCliente ? 'Cliente atualizado' : 'Cliente cadastrado',
+              description: `Já existia uma conta para o e-mail ${savedCliente.email} e ela foi vinculada a este cliente. Link de senha reenviado.`,
+            })
+          } else {
+            toast({
+              title: editingCliente ? 'Cliente atualizado' : 'Cliente cadastrado',
+              description: `Já existia uma conta para o e-mail ${savedCliente.email} e ela foi vinculada a este cliente.`,
+            })
+          }
+        } else {
+          toast({
+            title: editingCliente ? 'Cliente atualizado' : 'Cliente cadastrado',
+            description: savedCliente.email
+              ? 'Dados salvos com sucesso.'
+              : 'Cliente salvo. Adicione um e-mail para criar a conta de acesso ao portal.',
+          })
+        }
+      } else {
         toast({
-          title: 'Cliente cadastrado',
-          description: 'Novo cliente registrado no sistema.',
+          title: editingCliente ? 'Cliente atualizado' : 'Cliente cadastrado',
+          description: 'Cliente particular salvo com sucesso.',
         })
       }
+
       setIsModalOpen(false)
       setContratoFile(null)
       loadClientes()
@@ -282,6 +323,7 @@ export default function Clientes() {
             <thead className="bg-[#F9FAFB] text-gray-600 font-semibold text-xs border-b border-gray-200">
               <tr>
                 <th className="py-3 px-4">Nome / Razão Social</th>
+                <th className="py-3 px-4">Tipo</th>
                 <th className="py-3 px-4">Documento</th>
                 <th className="py-3 px-4">Contato</th>
                 <th className="py-3 px-4">Cidade / UF</th>
@@ -292,13 +334,13 @@ export default function Clientes() {
             <tbody className="divide-y divide-gray-100">
               {isLoading ? (
                 <tr>
-                  <td colSpan={6} className="py-8 text-center text-gray-500 text-sm">
+                  <td colSpan={7} className="py-8 text-center text-gray-500 text-sm">
                     Carregando clientes...
                   </td>
                 </tr>
               ) : filteredClientes.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="py-8 text-center text-gray-500 text-sm">
+                  <td colSpan={7} className="py-8 text-center text-gray-500 text-sm">
                     Nenhum cliente encontrado.
                   </td>
                 </tr>
@@ -318,6 +360,17 @@ export default function Clientes() {
                         )}
                         <span className="hover:text-blue-600">{cliente.nome_razao_social}</span>
                       </div>
+                    </td>
+                    <td className="py-3.5 px-4">
+                      {cliente.tipo_cliente === 'particular' ? (
+                        <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-purple-50 text-purple-700 border border-purple-200">
+                          Particular
+                        </span>
+                      ) : (
+                        <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200">
+                          Locação
+                        </span>
+                      )}
                     </td>
                     <td className="py-3.5 px-4 text-gray-600 text-xs font-mono">
                       {cliente.documento || '-'}
@@ -382,7 +435,30 @@ export default function Clientes() {
           </DialogHeader>
 
           <form onSubmit={handleSubmit} className="space-y-4 pt-2">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="space-y-1.5">
+                <Label htmlFor="tipo_cliente">Tipo de Cliente</Label>
+                <Select
+                  value={formData.tipo_cliente}
+                  onValueChange={(val: 'locacao' | 'particular') =>
+                    setFormData({ ...formData, tipo_cliente: val })
+                  }
+                >
+                  <SelectTrigger id="tipo_cliente" className="h-10 text-sm">
+                    <SelectValue placeholder="Tipo de Cliente" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="locacao">Locação</SelectItem>
+                    <SelectItem value="particular">Particular</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-[11px] text-gray-500">
+                  {formData.tipo_cliente === 'locacao'
+                    ? 'Cria conta de acesso no portal e envia link de senha.'
+                    : 'Cliente para serviços pontuais / balcão.'}
+                </p>
+              </div>
+
               <div className="space-y-1.5">
                 <Label htmlFor="tipo">Tipo de Pessoa</Label>
                 <Select

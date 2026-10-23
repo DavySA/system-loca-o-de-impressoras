@@ -132,6 +132,13 @@ export const TODOS_MODULOS: ModuloInfo[] = [
 ]
 
 // Presets padrão
+export const PERMISSOES_CLIENTE: ModuloSistema[] = [
+  'dashboard',
+  'ordens_servico',
+  'faturamento',
+  'meu_contrato',
+]
+
 export const PRESETS_PERMISSOES = {
   administrador: [
     'dashboard',
@@ -157,7 +164,7 @@ export const PRESETS_PERMISSOES = {
     'servicos',
   ] as ModuloSistema[],
   tecnico: ['ordens_servico', 'comissoes_metas'] as ModuloSistema[],
-  cliente: ['dashboard', 'ordens_servico', 'faturamento', 'meu_contrato'] as ModuloSistema[],
+  cliente: PERMISSOES_CLIENTE,
 }
 
 export function resolverPermissoesUsuario(
