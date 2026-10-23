@@ -1,6 +1,8 @@
 import pb from '@/lib/pocketbase/client'
 import type { ConfiguracoesEmpresa } from '@/types'
 
+export const DEFAULT_PORTAL_URL = 'https://sistema.tdtechnology.com.br'
+
 export const configuracoesService = {
   async get(): Promise<ConfiguracoesEmpresa | null> {
     try {
@@ -44,5 +46,15 @@ export const configuracoesService = {
   getLogoUrl(config: ConfiguracoesEmpresa | null): string | null {
     if (!config || !config.logo) return null
     return pb.files.getURL(config as any, config.logo)
+  },
+
+  /**
+   * Retorna a URL base do portal configurada pela empresa.
+   * Se vazia, recai para o default 'https://sistema.tdtechnology.com.br'.
+   */
+  getPortalUrl(config: ConfiguracoesEmpresa | null | undefined): string {
+    const raw = (config?.portal_url || '').trim()
+    if (!raw) return DEFAULT_PORTAL_URL
+    return raw.replace(/\/+$/, '')
   },
 }

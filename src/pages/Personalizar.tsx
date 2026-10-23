@@ -12,11 +12,13 @@ import {
   CreditCard,
   Key,
   Info,
+  ExternalLink,
+  ShieldCheck,
 } from 'lucide-react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
 import { Switch } from '@/components/ui/switch'
-import { configuracoesService } from '@/services/configuracoes'
+import { configuracoesService, DEFAULT_PORTAL_URL } from '@/services/configuracoes'
 import { coraService } from '@/services/cora'
 import { useToast } from '@/hooks/use-toast'
 import { Button } from '@/components/ui/button'
@@ -54,6 +56,7 @@ export default function Personalizar() {
     telefone: '',
     email: '',
     website: '',
+    portal_url: DEFAULT_PORTAL_URL,
     whatsapp: '',
     instagram: '',
     facebook: '',
@@ -63,6 +66,7 @@ export default function Personalizar() {
     uf: '',
     mensagem_rodape: '',
   })
+  const [portalUrlError, setPortalUrlError] = useState<string | null>(null)
   const [logoFile, setLogoFile] = useState<File | null>(null)
   const [logoPreview, setLogoPreview] = useState<string | null>(null)
 
@@ -85,6 +89,7 @@ export default function Personalizar() {
           telefone: data.telefone || '',
           email: data.email || '',
           website: data.website || '',
+          portal_url: data.portal_url || DEFAULT_PORTAL_URL,
           whatsapp: data.whatsapp || '',
           instagram: data.instagram || '',
           facebook: data.facebook || '',
@@ -172,9 +177,46 @@ export default function Personalizar() {
       return
     }
 
+    // Validação da URL do Portal
+    let portalUrlTratada = (formData.portal_url || '').trim()
+    if (!portalUrlTratada) {
+      portalUrlTratada = DEFAULT_PORTAL_URL
+    } else {
+      if (!/^https?:\/\//i.test(portalUrlTratada)) {
+        portalUrlTratada = `https://${portalUrlTratada}`
+      }
+      try {
+        const parsed = new URL(portalUrlTratada)
+        if (!parsed.hostname.includes('.')) {
+          setPortalUrlError('Informe um domínio válido (ex: sistema.tdtechnology.com.br).')
+          toast({
+            variant: 'destructive',
+            title: 'URL do Portal inválida',
+            description: 'Informe um endereço web válido para o portal da empresa.',
+          })
+          return
+        }
+      } catch {
+        setPortalUrlError('Formato de URL inválido.')
+        toast({
+          variant: 'destructive',
+          title: 'URL do Portal inválida',
+          description: 'Verifique a digitação da URL do Portal.',
+        })
+        return
+      }
+    }
+    portalUrlTratada = portalUrlTratada.replace(/\/+$/, '')
+    setPortalUrlError(null)
+
+    const payloadToSave = {
+      ...formData,
+      portal_url: portalUrlTratada,
+    }
+
     setIsSaving(true)
     try {
-      const updated = await configuracoesService.save(formData, logoFile || undefined)
+      const updated = await configuracoesService.save(payloadToSave, logoFile || undefined)
       setConfig(updated)
       if (updated.logo) {
         setLogoPreview(configuracoesService.getLogoUrl(updated))
@@ -341,13 +383,73 @@ export default function Personalizar() {
                     </div>
 
                     <div className="space-y-1.5 sm:col-span-2">
-                      <Label htmlFor="cfg-web">Website</Label>
+                      <Label htmlFor="cfg-web">Website Institucional</Label>
                       <Input
                         id="cfg-web"
                         value={formData.website}
                         onChange={(e) => setFormData({ ...formData, website: e.target.value })}
                         placeholder="Ex: tdtechnology.com.br"
                       />
+                    </div>
+
+                    {/* URL Oficial do Portal do Cliente */}
+                    <div className="space-y-1.5 sm:col-span-2 pt-2 border-t border-gray-100">
+                      <div className="flex items-center justify-between">
+                        <Label
+                          htmlFor="cfg-portal"
+                          className="text-sm font-semibold text-gray-900 flex items-center gap-1.5"
+                        >
+                          <ShieldCheck className="w-4 h-4 text-blue-600" /> URL do Portal do Cliente
+                        </Label>
+                        <span className="text-[11px] text-gray-500">
+                          Padrão:{' '}
+                          <code className="text-blue-600 bg-blue-50 px-1 py-0.5 rounded font-mono">
+                            {DEFAULT_PORTAL_URL}
+                          </code>
+                        </span>
+                      </div>
+                      <Input
+                        id="cfg-portal"
+                        type="url"
+                        value={formData.portal_url}
+                        onChange={(e) => {
+                          setFormData({ ...formData, portal_url: e.target.value })
+                          if (portalUrlError) setPortalUrlError(null)
+                        }}
+                        placeholder="https://sistema.tdtechnology.com.br"
+                        className={
+                          portalUrlError ? 'border-red-500 focus-visible:ring-red-500' : ''
+                        }
+                      />
+                      {portalUrlError ? (
+                        <p className="text-[11px] text-red-600 font-medium">{portalUrlError}</p>
+                      ) : (
+                        <p className="text-[11px] text-gray-500 leading-relaxed">
+                          Todos os e-mails transacionais (cobrança de fatura, redefinição de senha e
+                          avisos aos clientes) utilizarão este endereço base oficial nos botões e
+                          links de acesso. Se vazio, cairá para o valor padrão.
+                        </p>
+                      )}
+
+                      {/* Prévia interativa da URL do portal */}
+                      <div className="mt-2 p-3 bg-blue-50/60 rounded-lg border border-blue-200/70 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+                        <div className="space-y-0.5">
+                          <span className="font-semibold text-blue-900 block">
+                            Prévia dos links enviados aos clientes:
+                          </span>
+                          <span className="text-blue-700 font-mono text-[11px] break-all">
+                            {(formData.portal_url || DEFAULT_PORTAL_URL).replace(/\/+$/, '')}/login
+                          </span>
+                        </div>
+                        <a
+                          href={(formData.portal_url || DEFAULT_PORTAL_URL).replace(/\/+$/, '')}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 text-[11px] font-semibold text-blue-700 hover:text-blue-900 underline shrink-0"
+                        >
+                          Testar link <ExternalLink className="w-3 h-3" />
+                        </a>
+                      </div>
                     </div>
                   </div>
 
@@ -505,7 +607,13 @@ export default function Personalizar() {
                       {formData.website && (
                         <p className="flex items-center gap-1.5 truncate">
                           <Globe className="w-3.5 h-3.5 text-gray-400 shrink-0" />
-                          <span>{formData.website}</span>
+                          <span>Site: {formData.website}</span>
+                        </p>
+                      )}
+                      {formData.portal_url && (
+                        <p className="flex items-center gap-1.5 truncate text-blue-600 font-medium">
+                          <ShieldCheck className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                          <span>Portal: {formData.portal_url.replace(/^https?:\/\//, '')}</span>
                         </p>
                       )}
                     </div>

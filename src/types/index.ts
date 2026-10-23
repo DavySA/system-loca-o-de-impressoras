@@ -288,6 +288,7 @@ export interface ConfiguracoesEmpresa {
   telefone?: string
   email?: string
   website?: string
+  portal_url?: string
   whatsapp?: string
   instagram?: string
   facebook?: string

@@ -1062,8 +1062,9 @@ export default function Usuarios() {
                     </h4>
                   </div>
                   <p className="text-xs text-gray-500">
-                    Dispara um e-mail oficial com token seguro para o usuário redefinir sua senha
-                    diretamente.
+                    Dispara um e-mail oficial com token seguro apontando para o portal da empresa (
+                    <strong>sistema.tdtechnology.com.br</strong>) para o usuário definir ou
+                    redefinir sua senha.
                   </p>
                   <Button
                     type="button"

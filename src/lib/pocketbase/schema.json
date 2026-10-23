@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-23T00:16:06.509Z",
+  "generatedAt": "2026-10-23T00:30:12.835Z",
   "collections": [
     {
       "name": "users",
@@ -933,6 +933,12 @@
         },
         {
           "name": "linkedin",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "portal_url",
           "type": "text",
           "required": false,
           "system": false

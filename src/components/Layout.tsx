@@ -609,6 +609,27 @@ export default function Layout({ children }: LayoutProps) {
                 <Globe className="w-3.5 h-3.5" />
                 {empresaConfig?.website || 'tdtechnology.com.br'}
               </a>
+              {empresaConfig?.portal_url && (
+                <>
+                  <span className="hidden sm:inline text-gray-300">•</span>
+                  <a
+                    href={
+                      empresaConfig.portal_url.startsWith('http')
+                        ? empresaConfig.portal_url
+                        : `https://${empresaConfig.portal_url}`
+                    }
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-blue-700 hover:underline font-semibold inline-flex items-center gap-1"
+                    title="Acessar Portal do Cliente"
+                  >
+                    <span>Portal:</span>
+                    <span>
+                      {empresaConfig.portal_url.replace(/^https?:\/\//, '').replace(/\/+$/, '')}
+                    </span>
+                  </a>
+                </>
+              )}
             </div>
 
             {/* Direita: Contatos & Redes Sociais */}

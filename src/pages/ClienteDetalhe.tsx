@@ -21,6 +21,7 @@ import {
 } from 'lucide-react'
 import { useAuth } from '@/context/AuthContext'
 import { clientesService } from '@/services/clientes'
+import { configuracoesService } from '@/services/configuracoes'
 import { contratosService } from '@/services/contratos'
 import { equipamentosService } from '@/services/equipamentos'
 import { ordensServicoService } from '@/services/ordensServico'
@@ -98,6 +99,7 @@ export default function ClienteDetalhe() {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false)
   const [usuarioVinculado, setUsuarioVinculado] = useState<any | null>(null)
   const [isReenviandoSenha, setIsReenviandoSenha] = useState(false)
+  const [portalUrl, setPortalUrl] = useState('https://sistema.tdtechnology.com.br')
   const [formData, setFormData] = useState({
     nome_razao_social: '',
     tipo: 'Pessoa Jurídica' as 'Pessoa Jurídica' | 'Pessoa Física',
@@ -117,13 +119,17 @@ export default function ClienteDetalhe() {
     if (!id) return
     try {
       setIsLoading(true)
-      const [cData, contData, osData, fatData, eqData] = await Promise.all([
+      const [cData, contData, osData, fatData, eqData, cfgData] = await Promise.all([
         clientesService.getById(id),
         contratosService.getByCliente(id),
         ordensServicoService.getByCliente(id),
         faturasService.getByCliente(id),
         equipamentosService.getAll(),
+        configuracoesService.get(),
       ])
+      if (cfgData) {
+        setPortalUrl(configuracoesService.getPortalUrl(cfgData))
+      }
       setCliente(cData)
       setContratos(contData)
       setOrdens(osData)
@@ -1036,6 +1042,18 @@ export default function ClienteDetalhe() {
                         <p className="text-[11px] text-gray-500">
                           Perfil: <strong>Portal do Cliente</strong> (acesso a chamados, faturas e
                           contrato digital)
+                        </p>
+                        <p className="text-[11px] text-blue-700 font-medium pt-1 flex items-center gap-1">
+                          <span>Link do portal:</span>
+                          <a
+                            href={portalUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="underline inline-flex items-center gap-0.5 hover:text-blue-900"
+                          >
+                            {portalUrl.replace(/^https?:\/\//, '')}
+                            <ExternalLink className="w-3 h-3" />
+                          </a>
                         </p>
                       </div>
                     ) : (

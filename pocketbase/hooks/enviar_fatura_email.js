@@ -55,6 +55,7 @@ routerAdd(
     let empresaTelefone = '(11) 3322-1100'
     let empresaEmail = 'financeiro@tdtechnology.com.br'
     let empresaCnpj = ''
+    let portalUrl = 'https://sistema.tdtechnology.com.br'
     try {
       const configList = $app.findRecordsByFilter(
         'configuracoes_empresa',
@@ -69,6 +70,10 @@ routerAdd(
         empresaTelefone = cfg.getString('telefone') || cfg.getString('whatsapp') || empresaTelefone
         empresaEmail = cfg.getString('email') || empresaEmail
         empresaCnpj = cfg.getString('cnpj') || ''
+        const cfgPortal = (cfg.getString('portal_url') || '').trim()
+        if (cfgPortal) {
+          portalUrl = cfgPortal.replace(/\/+$/, '')
+        }
       }
     } catch (_) {}
 
@@ -79,7 +84,9 @@ routerAdd(
     })
     const mesRef = fatura.getString('mes_referencia') || 'Período Vigente'
     const faturaCodigo = '#' + fatura.id.slice(0, 8).toUpperCase()
-    const siteUrl = $os.getenv('SITE_URL') || 'https://tdtechnology.com.br'
+    const portalLoginUrl = portalUrl.startsWith('http')
+      ? `${portalUrl}/login`
+      : `https://${portalUrl}/login`
 
     // Data de vencimento
     let vencimentoStr = 'À vista / imediato'
@@ -151,7 +158,10 @@ routerAdd(
 
           <p>Você pode acessar os detalhes do demonstrativo de consumo das suas impressoras diretamente pelo Portal do Cliente:</p>
           <p style="text-align: center;">
-            <a href="${siteUrl}/login" class="btn">Acessar Portal do Cliente</a>
+            <a href="${portalLoginUrl}" class="btn">Acessar Portal do Cliente</a>
+          </p>
+          <p style="font-size: 12px; color: #4b5563; text-align: center; margin-top: 8px;">
+            Endereço de acesso: <a href="${portalLoginUrl}" style="color: #2563eb; text-decoration: underline;">${portalUrl.replace(/^https?:\/\//, '')}</a>
           </p>
 
           <p style="font-size: 12px; color: #64748b; margin-top: 24px;">
