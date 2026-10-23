@@ -58,7 +58,7 @@ export const clientesService = {
    * - Se já existir conta com esse e-mail: vincula cliente_id e atualiza papel para cliente (se necessário)
    * - Se não existir: cria novo usuário com papel 'cliente', vincula cliente_id e permissoes restritas
    * - Ao concluir: dispara requestPasswordReset para enviar link de criação/definição de senha
-   * - Falhas de SMTP não quebram o fluxo, retornando status descritivo
+   * - Falhas de e-mail não quebram o fluxo, retornando status descritivo
    */
   async syncUsuarioParaClienteLocacao(cliente: Cliente): Promise<{
     user: any | null

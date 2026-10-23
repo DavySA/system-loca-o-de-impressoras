@@ -1,9 +1,10 @@
 // Intercepta e-mails de redefinição e definição de senha disparados pelo PocketBase
-// para garantir que o texto, o remetente e as instruções apontem para o portal oficial da empresa:
-// https://sistema.tdtechnology.com.br
+// para garantir que o texto, o remetente (vendas@tdtechnology.com.br) e as instruções
+// apontem diretamente para o portal oficial da empresa:
+// https://sistema.tdtechnology.com.br/login
 onMailerRecordPasswordResetSend((e) => {
   try {
-    // 1. Buscar a URL do portal e o nome da empresa nas configurações
+    // 1. Buscar a URL do portal e dados da empresa nas configurações
     let portalUrl = 'https://sistema.tdtechnology.com.br'
     let empresaNome = 'TD Technology'
     let empresaTelefone = '(38) 3671-0221'
@@ -37,20 +38,23 @@ onMailerRecordPasswordResetSend((e) => {
     const recordName = e.record ? e.record.getString('name') || 'Cliente' : 'Cliente'
     const recordEmail = e.record ? e.record.email() : ''
 
-    // Se o portal apontar para o domínio customizado (sistema.tdtechnology.com.br),
-    // o link de reset direto no portal do cliente pode ser ${portalUrl}/reset-password?token=${token}
-    // E mantemos também o token/link original funcional caso o cliente precise
+    // Link oficial no portal para resetar a senha
     const portalResetUrl = token
       ? `${portalUrl}/reset-password?token=${encodeURIComponent(token)}`
       : `${portalUrl}/reset-password`
 
-    // Substituir no HTML e texto gerados pelo PocketBase referências ao app interno/preview
-    // Se o template padrão já continha links, substituímos a base do app pelo portalUrl
-    if (e.message && e.message.html) {
-      // Personalizar o assunto
+    // Remetente padrão de acesso/portal: vendas@tdtechnology.com.br
+    const remetenteEmail =
+      $os.getenv('SMTP_USER_VENDAS') || empresaEmail || 'vendas@tdtechnology.com.br'
+
+    if (e.message) {
+      e.message.from = {
+        address: remetenteEmail,
+        name: empresaNome,
+      }
       e.message.subject = `Definição / Redefinição de senha — ${empresaNome} (${portalDominio})`
 
-      // Montar um template profissional com a identidade da empresa e o portal oficial
+      // Template oficial com a identidade TD Technology e links do portal
       e.message.html = `
         <!DOCTYPE html>
         <html lang="pt-BR">
@@ -58,7 +62,7 @@ onMailerRecordPasswordResetSend((e) => {
           <meta charset="utf-8">
           <style>
             body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #1f2937; margin: 0; padding: 0; background-color: #f3f4f6; }
-            .container { max-width: 600px; margin: 24px auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; border: 1px solid #e5e7eb; }
+            .container { max-width: 600px; margin: 24px auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; border: 1px solid #e5e7eb; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
             .header { background-color: #1f2937; color: #ffffff; padding: 24px; text-align: left; border-bottom: 4px solid #2563eb; }
             .header h1 { margin: 0; font-size: 20px; font-weight: bold; }
             .header p { margin: 4px 0 0; font-size: 12px; color: #9ca3af; }
@@ -99,7 +103,7 @@ onMailerRecordPasswordResetSend((e) => {
             </div>
             <div class="footer">
               <p style="margin: 0;"><strong>${empresaNome}</strong></p>
-              <p style="margin: 4px 0 0;">Telefone: ${empresaTelefone} • E-mail: ${empresaEmail}</p>
+              <p style="margin: 4px 0 0;">Telefone: ${empresaTelefone} • E-mail: ${remetenteEmail}</p>
               <p style="margin: 8px 0 0; color: #9ca3af;">Portal oficial: <a href="${portalLoginUrl}" style="color: #6b7280; text-decoration: underline;">${portalDominio}</a></p>
             </div>
           </div>

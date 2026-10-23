@@ -371,12 +371,12 @@ export default function ClienteDetalhe() {
           if (syncResult.resetEmailSent) {
             toast({
               title: 'Cliente atualizado',
-              description: `Conta de usuário criada para ${updatedCliente.email} e link de senha enviado!`,
+              description: `Conta de usuário criada para ${updatedCliente.email} e link de definição de senha enviado por e-mail!`,
             })
           } else {
             toast({
               title: 'Cliente atualizado',
-              description: `Conta de usuário criada para ${updatedCliente.email}. O e-mail de definição de senha não pôde ser enviado agora (servidor SMTP não configurado). Você pode reenviar depois.`,
+              description: `Conta de usuário criada para ${updatedCliente.email}. O e-mail de definição de senha pode ser reenviado pelo botão no cadastro do cliente.`,
             })
           }
         } else if (syncResult.alreadyExisted) {
@@ -432,8 +432,7 @@ export default function ClienteDetalhe() {
       toast({
         variant: 'destructive',
         title: 'Não foi possível enviar o e-mail',
-        description:
-          'O servidor de e-mail (SMTP) ainda não está configurado no backend. É possível definir a senha manualmente no menu Usuários.',
+        description: err?.message || 'Falha temporária ao enviar link de recuperação por e-mail.',
       })
     } finally {
       setIsReenviandoSenha(false)

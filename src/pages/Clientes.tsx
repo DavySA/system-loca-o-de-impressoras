@@ -221,7 +221,7 @@ export default function Clientes() {
           } else {
             toast({
               title: editingCliente ? 'Cliente atualizado' : 'Cliente cadastrado!',
-              description: `Conta de usuário criada para ${savedCliente.email}. O e-mail de definição de senha não pôde ser enviado agora (servidor SMTP não configurado). Você pode reenviar depois.`,
+              description: `Conta de usuário criada para ${savedCliente.email}. O link de definição de senha pode ser reenviado pelo detalhe do cliente.`,
             })
           }
         } else if (syncResult.alreadyExisted) {

@@ -1,4 +1,5 @@
 // Endpoint transacional para envio de fatura de locação/serviço por e-mail direto do ERP
+// Remetente: financeiro@tdtechnology.com.br
 routerAdd(
   'POST',
   '/backend/v1/faturas/enviar-email',
@@ -51,8 +52,8 @@ routerAdd(
     }
 
     // 3. Buscar dados institucionais da empresa emissora
-    let empresaNome = 'STD'
-    let empresaTelefone = '(11) 3322-1100'
+    let empresaNome = 'STD - TD Technology'
+    let empresaTelefone = '(38) 3671-0221'
     let empresaEmail = 'financeiro@tdtechnology.com.br'
     let empresaCnpj = ''
     let portalUrl = 'https://sistema.tdtechnology.com.br'
@@ -68,7 +69,6 @@ routerAdd(
         const cfg = configList[0]
         empresaNome = cfg.getString('razao_social') || cfg.getString('nome_fantasia') || empresaNome
         empresaTelefone = cfg.getString('telefone') || cfg.getString('whatsapp') || empresaTelefone
-        empresaEmail = cfg.getString('email') || empresaEmail
         empresaCnpj = cfg.getString('cnpj') || ''
         const cfgPortal = (cfg.getString('portal_url') || '').trim()
         if (cfgPortal) {
@@ -178,19 +178,35 @@ routerAdd(
     </html>
   `
 
-    // 5. Envio do E-mail (com anexo do PDF do boleto se existir)
+    // 5. Envio do E-mail via MailClient do PocketBase
+    // Remetente de cobrança: financeiro@tdtechnology.com.br
     let fsys = null
     let fileReader = null
+    const settings = $app.settings()
+    const origUser = settings.smtp.username
+    const origPass = settings.smtp.password
+    const origSenderName = settings.meta.senderName
+    const origSenderAddr = settings.meta.senderAddress
+
+    const financeiroUser = $os.getenv('SMTP_USER_FINANCEIRO') || 'financeiro@tdtechnology.com.br'
+    const financeiroPass = $os.getenv('SMTP_PASSWORD_FINANCEIRO') || origPass
+
     try {
+      settings.smtp.username = financeiroUser
+      settings.smtp.password = financeiroPass
+      settings.meta.senderName = empresaNome
+      settings.meta.senderAddress = financeiroUser
+
       const mailClient = $app.newMailClient()
-      const msg = new MailMessage()
-      msg.from = {
-        address: empresaEmail,
-        name: empresaNome,
-      }
-      msg.to = [{ address: clienteEmail }]
-      msg.subject = subject
-      msg.html = htmlBody
+      const msg = new MailerMessage({
+        from: {
+          address: financeiroUser,
+          name: empresaNome,
+        },
+        to: [{ address: clienteEmail, name: clienteNome }],
+        subject: subject,
+        html: htmlBody,
+      })
 
       if (temBoletoAnexo) {
         try {
@@ -211,10 +227,16 @@ routerAdd(
       console.error('Falha ao disparar e-mail de fatura via PocketBase MailClient:', mailErr)
       const errDetail = mailErr ? mailErr.message || String(mailErr) : ''
       throw new BadRequestError(
-        'Servidor de e-mail (SMTP) não configurado ou indisponível. Detalhes: ' +
-          (errDetail || 'Serviço de e-mail não configurado nas configurações do servidor.'),
+        'Falha no envio de e-mail SMTP: ' +
+          (errDetail || 'Erro ao conectar ou autenticar no servidor SMTP.'),
       )
     } finally {
+      // Restaurar configurações originais de settings em memória
+      settings.smtp.username = origUser
+      settings.smtp.password = origPass
+      settings.meta.senderName = origSenderName
+      settings.meta.senderAddress = origSenderAddr
+
       if (fileReader) {
         try {
           fileReader.close()

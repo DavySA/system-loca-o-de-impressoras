@@ -655,8 +655,8 @@ export default function Faturamento() {
     } catch (err: any) {
       toast({
         variant: 'destructive',
-        title: 'Falha no envio de e-mail',
-        description: err.message || 'Verifique as configurações de SMTP do servidor.',
+        title: 'Falha no envio da fatura',
+        description: err.message || 'Verifique os dados do destinatário e tente novamente.',
       })
     } finally {
       setIsSendingEmail(false)
