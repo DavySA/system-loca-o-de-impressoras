@@ -28,12 +28,14 @@ export const graficaService = {
   async salvarConfiguracao(data: {
     cliente_grafica_id?: string | null
     equipamentos_lotados_ids: string[]
+    cabecalho_cupom_padrao?: string
     observacoes?: string
   }): Promise<GraficaConfiguracao> {
     const existing = await this.getConfiguracao()
     const payload: Record<string, any> = {
       equipamentos_lotados_ids: data.equipamentos_lotados_ids,
       observacoes: data.observacoes || '',
+      cabecalho_cupom_padrao: data.cabecalho_cupom_padrao ?? '',
       cliente_grafica_id: data.cliente_grafica_id ?? null,
     }
 
@@ -412,88 +414,142 @@ export const graficaService = {
     })
   },
 
-  async registrarVenda(data: {
+  // Registra uma venda com múltiplos itens (cupom completo) com baixa atômica por item
+  async registrarVendaCupom(data: {
     caixa_id: string
     operador_user_id?: string
-    produto_id?: string
-    descricao: string
-    quantidade: number
-    preco_unitario: number
-    custo_unitario?: number
+    itens: Array<{
+      produto_id?: string
+      descricao: string
+      quantidade: number
+      preco_unitario: number
+      custo_unitario?: number
+    }>
     forma_pagamento?: GraficaVenda['forma_pagamento']
     cliente_nome?: string
+    cliente_documento?: string
+    cliente_telefone?: string
     observacoes?: string
     darBaixaInsumo?: boolean
   }): Promise<GraficaVenda> {
-    const quantidade = Number(data.quantidade) || 1
-    const precoUnitario = Number(data.preco_unitario) || 0
-    const valorTotal = quantidade * precoUnitario
-    let custoTotal = (Number(data.custo_unitario) || 0) * quantidade
-
-    let suprimentoBaixadoId: string | undefined = undefined
-    let qtdInsumoBaixada = 0
-
-    // Se vinculado a um produto da gráfica, buscar detalhes e efetuar baixa automática no estoque
-    if (data.produto_id) {
-      try {
-        const prod = await pb.collection('grafica_produtos').getOne<GraficaProduto>(data.produto_id)
-        if (!data.custo_unitario && prod.custo_unitario) {
-          custoTotal = prod.custo_unitario * quantidade
-        }
-
-        // Baixa no estoque do próprio produto da gráfica
-        if (prod.estoque_atual !== undefined) {
-          const novoEstoqueProd = Math.max(0, (prod.estoque_atual || 0) - quantidade)
-          await pb.collection('grafica_produtos').update(prod.id, {
-            estoque_atual: novoEstoqueProd,
-          })
-        }
-
-        // Se o produto consome um insumo vinculado em Suprimentos (ex: papel sulfite A4 comum)
-        if (prod.suprimento_insumo_id && data.darBaixaInsumo !== false) {
-          suprimentoBaixadoId = prod.suprimento_insumo_id
-          const fator = prod.consumo_insumo_por_unidade || 1
-          qtdInsumoBaixada = quantidade * fator
-          try {
-            const sup = await pb.collection('suprimentos').getOne(suprimentoBaixadoId)
-            const novoEstoqueSup = Math.max(0, (sup.quantidade || 0) - qtdInsumoBaixada)
-            await pb.collection('suprimentos').update(suprimentoBaixadoId, {
-              quantidade: novoEstoqueSup,
-            })
-          } catch (errSup) {
-            console.error('Erro ao baixar suprimento vinculado:', errSup)
-          }
-        }
-      } catch (err) {
-        console.error('Erro ao processar produto da venda:', err)
-      }
+    if (!data.itens || data.itens.length === 0) {
+      throw new Error('O cupom deve conter pelo menos um produto ou serviço.')
     }
 
-    const lucroTotal = valorTotal - custoTotal
+    const agora = new Date()
+    const numeroCupom = `CUP-${agora.getFullYear()}${String(agora.getMonth() + 1).padStart(2, '0')}${String(agora.getDate()).padStart(2, '0')}-${String(Math.floor(Math.random() * 9000) + 1000)}`
+
+    let valorTotalGeral = 0
+    let custoTotalGeral = 0
+    const itensProcessados: Array<{
+      produto_id?: string
+      descricao: string
+      quantidade: number
+      preco_unitario: number
+      custo_unitario: number
+      valor_total: number
+      custo_total: number
+      suprimento_baixado_id?: string
+      quantidade_insumo_baixada?: number
+    }> = []
+
+    for (const item of data.itens) {
+      const qtd = Number(item.quantidade) || 1
+      const precoUn = Number(item.preco_unitario) || 0
+      const subtotal = qtd * precoUn
+      let custoUn = Number(item.custo_unitario) || 0
+
+      let suprimentoBaixadoId: string | undefined = undefined
+      let qtdInsumoBaixada = 0
+
+      if (item.produto_id) {
+        try {
+          const prod = await pb
+            .collection('grafica_produtos')
+            .getOne<GraficaProduto>(item.produto_id)
+          if (!custoUn && prod.custo_unitario) {
+            custoUn = prod.custo_unitario
+          }
+
+          // Baixa no estoque do próprio produto da gráfica
+          if (prod.estoque_atual !== undefined) {
+            const novoEstoque = Math.max(0, (prod.estoque_atual || 0) - qtd)
+            await pb.collection('grafica_produtos').update(prod.id, {
+              estoque_atual: novoEstoque,
+            })
+          }
+
+          // Baixa no suprimento vinculado caso aplicável
+          if (prod.suprimento_insumo_id && data.darBaixaInsumo !== false) {
+            suprimentoBaixadoId = prod.suprimento_insumo_id
+            const fator = prod.consumo_insumo_por_unidade || 1
+            qtdInsumoBaixada = qtd * fator
+            try {
+              const sup = await pb.collection('suprimentos').getOne(suprimentoBaixadoId)
+              const novoEstoqueSup = Math.max(0, (sup.quantidade || 0) - qtdInsumoBaixada)
+              await pb.collection('suprimentos').update(suprimentoBaixadoId, {
+                quantidade: novoEstoqueSup,
+              })
+            } catch (errSup) {
+              console.error('Erro ao baixar suprimento vinculado:', errSup)
+            }
+          }
+        } catch (err) {
+          console.error('Erro ao processar item do cupom:', err)
+        }
+      }
+
+      const custoItem = custoUn * qtd
+      valorTotalGeral += subtotal
+      custoTotalGeral += custoItem
+
+      itensProcessados.push({
+        produto_id: item.produto_id || undefined,
+        descricao: item.descricao,
+        quantidade: qtd,
+        preco_unitario: precoUn,
+        custo_unitario: custoUn,
+        valor_total: subtotal,
+        custo_total: custoItem,
+        suprimento_baixado_id: suprimentoBaixadoId,
+        quantidade_insumo_baixada: qtdInsumoBaixada,
+      })
+    }
+
+    const lucroTotalGeral = valorTotalGeral - custoTotalGeral
+    const primeiroItem = itensProcessados[0]
+    const descricaoResumo =
+      itensProcessados.length === 1
+        ? primeiroItem.descricao
+        : `${primeiroItem.descricao} (+${itensProcessados.length - 1} ${itensProcessados.length === 2 ? 'item' : 'itens'})`
 
     const novaVenda = await pb.collection('grafica_vendas').create<GraficaVenda>({
       caixa_id: data.caixa_id,
       operador_user_id: data.operador_user_id || undefined,
-      data_hora: new Date().toISOString(),
-      produto_id: data.produto_id || undefined,
-      descricao: data.descricao,
-      quantidade,
-      preco_unitario: precoUnitario,
-      valor_total: valorTotal,
-      custo_total: custoTotal,
-      lucro_total: lucroTotal,
+      data_hora: agora.toISOString(),
+      produto_id: primeiroItem.produto_id || undefined,
+      descricao: descricaoResumo,
+      quantidade: itensProcessados.reduce((acc, it) => acc + it.quantidade, 0),
+      preco_unitario: itensProcessados.length === 1 ? primeiroItem.preco_unitario : valorTotalGeral,
+      valor_total: valorTotalGeral,
+      custo_total: custoTotalGeral,
+      lucro_total: lucroTotalGeral,
       forma_pagamento: data.forma_pagamento || 'dinheiro',
-      suprimento_baixado_id: suprimentoBaixadoId,
-      quantidade_insumo_baixada: qtdInsumoBaixada,
-      cliente_nome: data.cliente_nome,
-      observacoes: data.observacoes,
+      suprimento_baixado_id: primeiroItem.suprimento_baixado_id,
+      quantidade_insumo_baixada: primeiroItem.quantidade_insumo_baixada,
+      cliente_nome: data.cliente_nome?.trim() || 'Balcão / Cliente Final',
+      cliente_documento: data.cliente_documento?.trim() || undefined,
+      cliente_telefone: data.cliente_telefone?.trim() || undefined,
+      numero_cupom: numeroCupom,
+      itens_cupom: JSON.stringify(itensProcessados),
+      observacoes: data.observacoes || undefined,
     })
 
-    // Atualizar acumulados do caixa atual
+    // Atualizar totais do caixa
     try {
       const caixa = await pb.collection('grafica_caixas').getOne<GraficaCaixa>(data.caixa_id)
-      const novoTotal = (caixa.total_entradas || 0) + valorTotal
-      const novoCusto = (caixa.total_custo_insumos || 0) + custoTotal
+      const novoTotal = (caixa.total_entradas || 0) + valorTotalGeral
+      const novoCusto = (caixa.total_custo_insumos || 0) + custoTotalGeral
       const novoLucro = novoTotal - novoCusto
       await pb.collection('grafica_caixas').update(data.caixa_id, {
         total_entradas: novoTotal,
@@ -507,39 +563,109 @@ export const graficaService = {
     return novaVenda
   },
 
+  async registrarVenda(data: {
+    caixa_id: string
+    operador_user_id?: string
+    produto_id?: string
+    descricao: string
+    quantidade: number
+    preco_unitario: number
+    custo_unitario?: number
+    forma_pagamento?: GraficaVenda['forma_pagamento']
+    cliente_nome?: string
+    cliente_documento?: string
+    cliente_telefone?: string
+    observacoes?: string
+    darBaixaInsumo?: boolean
+  }): Promise<GraficaVenda> {
+    return this.registrarVendaCupom({
+      caixa_id: data.caixa_id,
+      operador_user_id: data.operador_user_id,
+      itens: [
+        {
+          produto_id: data.produto_id,
+          descricao: data.descricao,
+          quantidade: data.quantidade,
+          preco_unitario: data.preco_unitario,
+          custo_unitario: data.custo_unitario,
+        },
+      ],
+      forma_pagamento: data.forma_pagamento,
+      cliente_nome: data.cliente_nome,
+      cliente_documento: data.cliente_documento,
+      cliente_telefone: data.cliente_telefone,
+      observacoes: data.observacoes,
+      darBaixaInsumo: data.darBaixaInsumo,
+    })
+  },
+
   async estornarVenda(vendaId: string): Promise<boolean> {
     try {
       const venda = await pb.collection('grafica_vendas').getOne<GraficaVenda>(vendaId)
 
-      // Devolver estoque do produto
-      if (venda.produto_id) {
+      // Identificar se há múltiplos itens armazenados em itens_cupom
+      let itensParaRestaurar: Array<{
+        produto_id?: string
+        quantidade: number
+        suprimento_baixado_id?: string
+        quantidade_insumo_baixada?: number
+      }> = []
+
+      if (venda.itens_cupom) {
         try {
-          const prod = await pb
-            .collection('grafica_produtos')
-            .getOne<GraficaProduto>(venda.produto_id)
-          const estoqueRestaurado = (prod.estoque_atual || 0) + Number(venda.quantidade || 0)
-          await pb.collection('grafica_produtos').update(venda.produto_id, {
-            estoque_atual: estoqueRestaurado,
-          })
+          const parsed =
+            typeof venda.itens_cupom === 'string'
+              ? JSON.parse(venda.itens_cupom)
+              : venda.itens_cupom
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            itensParaRestaurar = parsed
+          }
         } catch {
-          /* intentionally ignored */
+          /* fallback para dados planos do registro */
         }
       }
 
-      // Devolver estoque do suprimento vinculado
-      if (venda.suprimento_baixado_id && venda.quantidade_insumo_baixada) {
-        try {
-          const sup = await pb.collection('suprimentos').getOne(venda.suprimento_baixado_id)
-          const estoqueRestaurado = (sup.quantidade || 0) + Number(venda.quantidade_insumo_baixada)
-          await pb.collection('suprimentos').update(venda.suprimento_baixado_id, {
-            quantidade: estoqueRestaurado,
-          })
-        } catch {
-          /* intentionally ignored */
+      if (itensParaRestaurar.length === 0) {
+        itensParaRestaurar = [
+          {
+            produto_id: venda.produto_id,
+            quantidade: Number(venda.quantidade || 0),
+            suprimento_baixado_id: venda.suprimento_baixado_id,
+            quantidade_insumo_baixada: Number(venda.quantidade_insumo_baixada || 0),
+          },
+        ]
+      }
+
+      // Restaurar estoque de cada item do cupom
+      for (const it of itensParaRestaurar) {
+        if (it.produto_id) {
+          try {
+            const prod = await pb
+              .collection('grafica_produtos')
+              .getOne<GraficaProduto>(it.produto_id)
+            const estoqueRestaurado = (prod.estoque_atual || 0) + Number(it.quantidade || 0)
+            await pb.collection('grafica_produtos').update(it.produto_id, {
+              estoque_atual: estoqueRestaurado,
+            })
+          } catch {
+            /* intentionally ignored */
+          }
+        }
+
+        if (it.suprimento_baixado_id && it.quantidade_insumo_baixada) {
+          try {
+            const sup = await pb.collection('suprimentos').getOne(it.suprimento_baixado_id)
+            const estoqueRestaurado = (sup.quantidade || 0) + Number(it.quantidade_insumo_baixada)
+            await pb.collection('suprimentos').update(it.suprimento_baixado_id, {
+              quantidade: estoqueRestaurado,
+            })
+          } catch {
+            /* intentionally ignored */
+          }
         }
       }
 
-      // Reajustar caixa
+      // Reajustar totais do caixa
       if (venda.caixa_id) {
         try {
           const caixa = await pb.collection('grafica_caixas').getOne<GraficaCaixa>(venda.caixa_id)

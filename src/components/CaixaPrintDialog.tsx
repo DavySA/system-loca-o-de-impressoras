@@ -8,6 +8,7 @@ import type {
   GraficaCaixaContador,
   GraficaVenda,
   ConfiguracoesEmpresa,
+  Cliente,
 } from '@/types'
 import { formatDate } from '@/lib/formatters'
 
@@ -18,6 +19,8 @@ interface CaixaPrintDialogProps {
   contadores?: GraficaCaixaContador[]
   vendas?: GraficaVenda[]
   configEmpresa: ConfiguracoesEmpresa | null
+  clienteGrafica?: Cliente | null
+  cabecalhoPersonalizado?: string | null
 }
 
 export function CaixaPrintDialog({
@@ -27,6 +30,8 @@ export function CaixaPrintDialog({
   contadores = [],
   vendas = [],
   configEmpresa,
+  clienteGrafica,
+  cabecalhoPersonalizado,
 }: CaixaPrintDialogProps) {
   const printAreaRef = useRef<HTMLDivElement>(null)
   const [formato, setFormato] = React.useState<'bobina' | 'a5'>('bobina')
@@ -146,6 +151,8 @@ export function CaixaPrintDialog({
               contadores={contadores}
               vendas={vendas}
               configEmpresa={configEmpresa}
+              clienteGrafica={clienteGrafica}
+              cabecalhoPersonalizado={cabecalhoPersonalizado}
               formato={formato}
             />
           </div>

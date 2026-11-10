@@ -41,6 +41,7 @@ export interface Cliente {
   cidade?: string
   uf?: string
   endereco?: string
+  cabecalho_cupom?: string // Cabeçalho personalizado impresso nos cupons da Gráfica Rápida
   status: 'ativo' | 'inativo'
   contrato_digital?: string // Arquivo de contrato escaneado e assinado (PDF/imagem)
   created: string
@@ -367,6 +368,7 @@ export interface GraficaConfiguracao {
   id: string
   cliente_grafica_id?: string
   equipamentos_lotados_ids: string[]
+  cabecalho_cupom_padrao?: string
   observacoes?: string
   created: string
   updated: string
@@ -375,6 +377,21 @@ export interface GraficaConfiguracao {
     equipamentos_lotados_ids?: Equipamento[]
   }
 }
+
+export interface ItemVendaCupom {
+  id?: string
+  produto_id?: string
+  descricao: string
+  quantidade: number
+  preco_unitario: number
+  custo_unitario?: number
+  valor_total: number
+  custo_total?: number
+  suprimento_baixado_id?: string
+  quantidade_insumo_baixada?: number
+}
+
+export type GraficaItemCupom = ItemVendaCupom
 
 export interface GraficaCaixa {
   id: string
@@ -454,6 +471,10 @@ export interface GraficaVenda {
   suprimento_baixado_id?: string
   quantidade_insumo_baixada?: number
   cliente_nome?: string
+  cliente_documento?: string
+  cliente_telefone?: string
+  numero_cupom?: string
+  itens_cupom?: ItemVendaCupom[] | string
   observacoes?: string
   created: string
   updated: string

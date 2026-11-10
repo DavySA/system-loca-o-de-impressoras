@@ -39,6 +39,8 @@ import {
 } from '@/components/ui/select'
 import type { Cliente } from '@/types'
 
+import { FileSpreadsheet } from 'lucide-react'
+import { ModalImportExport } from '@/components/ModalImportExport'
 import { useAuth } from '@/context/AuthContext'
 
 export default function Clientes() {
@@ -73,6 +75,9 @@ export default function Clientes() {
   // Modal de exclusão
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [clienteToDelete, setClienteToDelete] = useState<Cliente | null>(null)
+
+  // Modal de Importação e Exportação (XLSX / CSV)
+  const [isImportExportOpen, setIsImportExportOpen] = useState(false)
 
   const loadClientes = async () => {
     try {
@@ -291,12 +296,21 @@ export default function Clientes() {
             Gerenciamento de contratos, faturamento e dados de contato das empresas
           </p>
         </div>
-        <Button
-          onClick={handleOpenCreate}
-          className="bg-blue-600 hover:bg-blue-700 text-white shadow-xs flex items-center gap-1.5"
-        >
-          <Plus className="w-4 h-4" /> Novo Cliente
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            onClick={() => setIsImportExportOpen(true)}
+            className="flex items-center gap-1.5 border-gray-300 text-gray-700 hover:bg-gray-50"
+          >
+            <FileSpreadsheet className="w-4 h-4 text-emerald-600" /> Importar / Exportar
+          </Button>
+          <Button
+            onClick={handleOpenCreate}
+            className="bg-blue-600 hover:bg-blue-700 text-white shadow-xs flex items-center gap-1.5"
+          >
+            <Plus className="w-4 h-4" /> Novo Cliente
+          </Button>
+        </div>
       </div>
 
       {/* Barra de busca */}
@@ -650,11 +664,21 @@ export default function Clientes() {
               Cancelar
             </Button>
             <Button variant="destructive" onClick={handleConfirmDelete}>
-              Confirmar Exclusão
+              Excluir
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Modal de Importação / Exportação de Clientes */}
+      <ModalImportExport
+        open={isImportExportOpen}
+        onOpenChange={setIsImportExportOpen}
+        abaPadrao="clientes"
+        onImportSucesso={() => {
+          loadClientes()
+        }}
+      />
     </div>
   )
 }

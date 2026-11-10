@@ -30,6 +30,9 @@ import { equipamentosService } from '@/services/equipamentos'
 import { suprimentosService } from '@/services/suprimentos'
 import { configuracoesService } from '@/services/configuracoes'
 import { CaixaPrintDialog } from '@/components/CaixaPrintDialog'
+import { VendaPrintDialog } from '@/components/VendaPrintDialog'
+import { ModalPdvCupom } from '@/components/ModalPdvCupom'
+import { ModalImportExport } from '@/components/ModalImportExport'
 import { formatCurrency, formatDate, formatDateTime } from '@/lib/formatters'
 import { useAuth } from '@/context/AuthContext'
 import { useToast } from '@/hooks/use-toast'
@@ -116,10 +119,20 @@ export default function GraficaRapida() {
   const [isModalFecharCaixaOpen, setIsModalFecharCaixaOpen] = useState(false)
   const [isModalNovaVendaOpen, setIsModalNovaVendaOpen] = useState(false)
   const [isModalNovoProdutoOpen, setIsModalNovoProdutoOpen] = useState(false)
+  const [isModalImportExportOpen, setIsModalImportExportOpen] = useState(false)
+  const [importExportAbaPadrao, setImportExportAbaPadrao] = useState<'clientes' | 'produtos'>(
+    'clientes',
+  )
+  const [vendaParaImprimir, setVendaParaImprimir] = useState<GraficaVenda | null>(null)
+  const [isModalImprimirVendaOpen, setIsModalImprimirVendaOpen] = useState(false)
   const [caixaParaImprimir, setCaixaParaImprimir] = useState<GraficaCaixa | null>(null)
   const [contadoresImpressao, setContadoresImpressao] = useState<GraficaCaixaContador[]>([])
   const [vendasImpressao, setVendasImpressao] = useState<GraficaVenda[]>([])
   const [isModalImprimirCaixaOpen, setIsModalImprimirCaixaOpen] = useState(false)
+
+  // Cabeçalho de Cupom do Cliente da Gráfica
+  const [cabecalhoClienteGrafica, setCabecalhoClienteGrafica] = useState<string>('')
+  const [isSalvandoCabecalho, setIsSalvandoCabecalho] = useState(false)
 
   // Formulário Abertura de Caixa (Multi-Equipamento)
   const [equipamentosSelecionadosAbertura, setEquipamentosSelecionadosAbertura] = useState<
@@ -228,12 +241,20 @@ export default function GraficaRapida() {
       if (cfg) setConfigEmpresa(cfg)
 
       if (grafCfg) {
-        setClienteGraficaId(grafCfg.cliente_grafica_id || '')
+        const cliId = grafCfg.cliente_grafica_id || ''
+        setClienteGraficaId(cliId)
         setEquipamentosLotadosIds(grafCfg.equipamentos_lotados_ids || [])
         setObsLotacao(grafCfg.observacoes || '')
+        if (cliId) {
+          const cliGraf = clis.find((c) => c.id === cliId)
+          if (cliGraf) {
+            setCabecalhoClienteGrafica(cliGraf.cabecalho_cupom || '')
+          }
+        }
       } else {
         // Fallback: se ainda não houver configuração
         setClienteGraficaId('')
+        setCabecalhoClienteGrafica('')
         const ids = equips.map((e) => e.id)
         setEquipamentosLotadosIds(ids)
       }
@@ -300,6 +321,12 @@ export default function GraficaRapida() {
     }
   }
 
+  // Visualizar e reimprimir cupom de uma VENDA específica (com múltiplos itens e dados do cliente)
+  const handleImprimirCupomVenda = (venda: GraficaVenda) => {
+    setVendaParaImprimir(venda)
+    setIsModalImprimirVendaOpen(true)
+  }
+
   // Equipamentos elegíveis: quando há um cliente definido como sendo a gráfica,
   // listar SOMENTE os equipamentos com status "locado" vinculados a esse cliente.
   // Caso contrário, lista os equipamentos em locado ou disponíveis para que o usuário possa associar.
@@ -333,7 +360,7 @@ export default function GraficaRapida() {
     return equipamentos.filter((eq) => equipamentosLotadosIds.includes(eq.id))
   }, [equipamentos, equipamentosLotadosIds, clienteGraficaId])
 
-  // Salvar configuração de lotação da Gráfica Rápida
+  // Salvar configuração de lotação e cabeçalho de cupom do cliente da Gráfica Rápida
   const handleSalvarConfigLotacao = async () => {
     try {
       setIsSalvandoLotacao(true)
@@ -342,18 +369,59 @@ export default function GraficaRapida() {
         equipamentos_lotados_ids: equipamentosLotadosIds,
         observacoes: obsLotacao,
       })
+
+      if (clienteGraficaId && cabecalhoClienteGrafica !== undefined) {
+        await clientesService.update(clienteGraficaId, {
+          cabecalho_cupom: cabecalhoClienteGrafica,
+        })
+      }
+
       toast({
-        title: 'Lotação salva com sucesso!',
-        description: `${equipamentosLotadosIds.length} equipamento(s) lotado(s) no ambiente da gráfica.`,
+        title: 'Configurações e Lotação salvas com sucesso!',
+        description: `Cliente, cabeçalho de cupom e ${equipamentosLotadosIds.length} equipamento(s) atualizados.`,
       })
+      loadData()
     } catch (err: any) {
       toast({
         variant: 'destructive',
-        title: 'Erro ao salvar lotação',
+        title: 'Erro ao salvar configurações',
         description: err.message || 'Verifique as permissões de administrador.',
       })
     } finally {
       setIsSalvandoLotacao(false)
+    }
+  }
+
+  // Salvar cabeçalho de cupom especificamente para o cliente da gráfica selecionado
+  const handleSalvarCabecalhoCliente = async () => {
+    if (!clienteGraficaId) {
+      toast({
+        variant: 'destructive',
+        title: 'Selecione um cliente',
+        description: 'Vincule um cliente à Gráfica Rápida antes de salvar seu cabeçalho.',
+      })
+      return
+    }
+
+    try {
+      setIsSalvandoCabecalho(true)
+      await clientesService.update(clienteGraficaId, {
+        cabecalho_cupom: cabecalhoClienteGrafica,
+      })
+      toast({
+        title: 'Cabeçalho do cupom salvo!',
+        description:
+          'Os cupons emitidos para este cliente utilizarão este cabeçalho personalizado.',
+      })
+      loadData()
+    } catch (err: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Erro ao salvar cabeçalho',
+        description: err.message,
+      })
+    } finally {
+      setIsSalvandoCabecalho(false)
     }
   }
 
@@ -1128,7 +1196,16 @@ export default function GraficaRapida() {
                                   {v.forma_pagamento?.replace('_', ' ')}
                                 </Badge>
                               </td>
-                              <td className="py-2 px-3 text-right">
+                              <td className="py-2 px-3 text-right space-x-1">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleImprimirCupomVenda(v)}
+                                  className="h-7 w-7 p-0 text-blue-600 hover:text-blue-800 hover:bg-blue-50"
+                                  title="Imprimir Cupom desta Venda"
+                                >
+                                  <Printer className="w-3.5 h-3.5" />
+                                </Button>
                                 <Button
                                   variant="ghost"
                                   size="sm"
@@ -1209,6 +1286,7 @@ export default function GraficaRapida() {
                         <th className="py-2.5 px-3 text-right">Custo</th>
                         <th className="py-2.5 px-3 text-right text-emerald-700 font-bold">Lucro</th>
                         <th className="py-2.5 px-3">Pagamento</th>
+                        <th className="py-2.5 px-3 text-right">Ações</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
@@ -1240,6 +1318,17 @@ export default function GraficaRapida() {
                             <span className="capitalize text-[10.5px] px-2 py-0.5 bg-gray-100 rounded text-gray-700 border">
                               {v.forma_pagamento?.replace('_', ' ')}
                             </span>
+                          </td>
+                          <td className="py-2.5 px-3 text-right">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleImprimirCupomVenda(v)}
+                              className="h-7 w-7 p-0 text-blue-600 hover:text-blue-800 hover:bg-blue-50"
+                              title="Imprimir Cupom da Venda"
+                            >
+                              <Printer className="w-3.5 h-3.5" />
+                            </Button>
                           </td>
                         </tr>
                       ))}
@@ -1276,12 +1365,25 @@ export default function GraficaRapida() {
                     className="h-8 pl-8 text-xs w-48"
                   />
                 </div>
-                <Button
-                  onClick={() => setIsModalNovoProdutoOpen(true)}
-                  className="bg-blue-600 hover:bg-blue-700 text-white text-xs h-8"
-                >
-                  <Plus className="w-3.5 h-3.5 mr-1" /> Novo Produto/Papel
-                </Button>
+                <div className="flex items-center gap-1.5">
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setImportExportAbaPadrao('produtos')
+                      setIsModalImportExportOpen(true)
+                    }}
+                    className="text-xs h-8"
+                  >
+                    <FileSpreadsheet className="w-3.5 h-3.5 mr-1 text-emerald-600" />
+                    Importar / Exportar
+                  </Button>
+                  <Button
+                    onClick={() => setIsModalNovoProdutoOpen(true)}
+                    className="bg-blue-600 hover:bg-blue-700 text-white text-xs h-8"
+                  >
+                    <Plus className="w-3.5 h-3.5 mr-1" /> Novo Produto/Papel
+                  </Button>
+                </div>
               </div>
             </CardHeader>
             <CardContent>
@@ -1623,10 +1725,12 @@ export default function GraficaRapida() {
                       onValueChange={(val) => {
                         const novoId = val === 'nenhum' ? '' : val
                         setClienteGraficaId(novoId)
-                        // Se desmarcar ou mudar, limpar equipamentos lotados não compatíveis
                         if (!novoId) {
+                          setCabecalhoClienteGrafica('')
                           setEquipamentosLotadosIds(equipamentos.map((e) => e.id))
                         } else {
+                          const cli = todosClientes.find((c) => c.id === novoId)
+                          setCabecalhoClienteGrafica(cli?.cabecalho_cupom || '')
                           const locadosDesteCliente = equipamentos
                             .filter((e) => e.cliente_id === novoId && e.status === 'locado')
                             .map((e) => e.id)
@@ -1651,26 +1755,70 @@ export default function GraficaRapida() {
                   </div>
 
                   {clienteGraficaId && (
-                    <div className="p-3 bg-white rounded-lg border border-blue-200 flex items-center justify-between">
-                      <div>
-                        <p className="font-bold text-gray-900">
-                          {todosClientes.find((c) => c.id === clienteGraficaId)?.nome_razao_social}
-                        </p>
-                        <p className="text-[11px] text-gray-500">
-                          Equipamentos com status <strong>"locado"</strong> vinculados a este
-                          cliente:{' '}
-                          <strong className="text-blue-700">
+                    <div className="space-y-3">
+                      <div className="p-3 bg-white rounded-lg border border-blue-200 flex items-center justify-between">
+                        <div>
+                          <p className="font-bold text-gray-900">
                             {
-                              equipamentos.filter(
-                                (e) => e.cliente_id === clienteGraficaId && e.status === 'locado',
-                              ).length
+                              todosClientes.find((c) => c.id === clienteGraficaId)
+                                ?.nome_razao_social
                             }
-                          </strong>
-                        </p>
+                          </p>
+                          <p className="text-[11px] text-gray-500">
+                            Equipamentos com status <strong>"locado"</strong> vinculados a este
+                            cliente:{' '}
+                            <strong className="text-blue-700">
+                              {
+                                equipamentos.filter(
+                                  (e) => e.cliente_id === clienteGraficaId && e.status === 'locado',
+                                ).length
+                              }
+                            </strong>
+                          </p>
+                        </div>
+                        <Badge
+                          variant="outline"
+                          className="bg-blue-50 text-blue-700 border-blue-300"
+                        >
+                          Cliente Gráfica Ativo
+                        </Badge>
                       </div>
-                      <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-300">
-                        Cliente Gráfica Ativo
-                      </Badge>
+
+                      {/* Cabeçalho do Cupom deste Cliente */}
+                      <div className="p-3.5 bg-blue-50/50 rounded-xl border border-blue-200 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <Label
+                              htmlFor="cabecalho-cupom"
+                              className="text-xs font-bold text-blue-900"
+                            >
+                              Cabeçalho Personalizado do Cupom deste Cliente
+                            </Label>
+                            <p className="text-[11px] text-gray-600">
+                              Texto impresso no topo de cupons de caixa e vendas correspondentes a
+                              este cliente (ex.: Dados da empresa, CNPJ, endereço, telefone,
+                              mensagem ao cliente).
+                            </p>
+                          </div>
+                          <Button
+                            type="button"
+                            size="sm"
+                            disabled={isSalvandoCabecalho}
+                            onClick={handleSalvarCabecalhoCliente}
+                            className="bg-blue-600 hover:bg-blue-700 text-white text-xs h-7"
+                          >
+                            {isSalvandoCabecalho ? 'Salvando...' : 'Salvar Cabeçalho'}
+                          </Button>
+                        </div>
+                        <Textarea
+                          id="cabecalho-cupom"
+                          rows={4}
+                          value={cabecalhoClienteGrafica}
+                          onChange={(e) => setCabecalhoClienteGrafica(e.target.value)}
+                          placeholder="Exemplo:&#10;GRÁFICA RÁPIDA EXPRESS LTDA&#10;CNPJ: 00.000.000/0001-00&#10;Rua Principal, 123 - Centro - Telefone: (00) 0000-0000&#10;Obrigado pela preferência!"
+                          className="bg-white font-mono text-xs leading-relaxed"
+                        />
+                      </div>
                     </div>
                   )}
                 </div>
@@ -2378,159 +2526,19 @@ export default function GraficaRapida() {
         </DialogContent>
       </Dialog>
 
-      {/* Modal 3: Lançamento de Venda / Serviço com Baixa Automática */}
-      <Dialog open={isModalNovaVendaOpen} onOpenChange={setIsModalNovaVendaOpen}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-blue-600">
-              <ShoppingCart className="w-5 h-5" /> Registrar Serviço / Venda de Insumos
-            </DialogTitle>
-          </DialogHeader>
-
-          <form onSubmit={handleConfirmarVenda} className="space-y-3.5 pt-1 text-xs">
-            <div className="space-y-1">
-              <Label htmlFor="sel-prod">Selecionar Produto / Insumo Cadastrado</Label>
-              <Select value={vendaProdutoId} onValueChange={handleSelecionarProdutoVenda}>
-                <SelectTrigger id="sel-prod">
-                  <SelectValue placeholder="Escolha um serviço/produto ou digite livremente..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {produtos.map((p) => (
-                    <SelectItem key={p.id} value={p.id}>
-                      {p.nome} — {formatCurrency(p.preco_venda)} (Estoque: {p.estoque_atual || 0})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-1">
-              <Label htmlFor="venda-desc">Descrição do Serviço / Insumo *</Label>
-              <Input
-                id="venda-desc"
-                placeholder="Ex: Cópia A4 comum mono, Impressão Couchê 150g..."
-                value={vendaDescricao}
-                onChange={(e) => setVendaDescricao(e.target.value)}
-                required
-              />
-            </div>
-
-            <div className="grid grid-cols-3 gap-2">
-              <div className="space-y-1">
-                <Label htmlFor="venda-qtd">Quantidade *</Label>
-                <Input
-                  id="venda-qtd"
-                  type="number"
-                  min="1"
-                  value={vendaQuantidade}
-                  onChange={(e) => setVendaQuantidade(Math.max(1, parseInt(e.target.value) || 1))}
-                  required
-                  className="font-mono"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <Label htmlFor="venda-prc">Preço Un. (R$) *</Label>
-                <Input
-                  id="venda-prc"
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={vendaPrecoUnit}
-                  onChange={(e) => setVendaPrecoUnit(parseFloat(e.target.value) || 0)}
-                  required
-                  className="font-mono"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <Label htmlFor="venda-cst">Custo Un. (R$)</Label>
-                <Input
-                  id="venda-cst"
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={vendaCustoUnit}
-                  onChange={(e) => setVendaCustoUnit(parseFloat(e.target.value) || 0)}
-                  className="font-mono text-gray-600"
-                />
-              </div>
-            </div>
-
-            {/* Total e Lucro Calculados */}
-            <div className="p-2.5 rounded-lg bg-gray-50 border grid grid-cols-2 text-center">
-              <div>
-                <span className="text-[10px] text-gray-500 uppercase">Total a Cobrar</span>
-                <p className="font-bold text-sm text-blue-900 font-mono">
-                  {formatCurrency(vendaQuantidade * vendaPrecoUnit)}
-                </p>
-              </div>
-              <div>
-                <span className="text-[10px] text-emerald-700 uppercase font-bold">
-                  Lucro Estimado
-                </span>
-                <p className="font-bold text-sm text-emerald-700 font-mono">
-                  {formatCurrency(vendaQuantidade * (vendaPrecoUnit - vendaCustoUnit))}
-                </p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2">
-              <div className="space-y-1">
-                <Label htmlFor="venda-pgto">Forma de Pagamento</Label>
-                <Select
-                  value={vendaFormaPagamento}
-                  onValueChange={(val: any) => setVendaFormaPagamento(val)}
-                >
-                  <SelectTrigger id="venda-pgto">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="dinheiro">Dinheiro em Espécie</SelectItem>
-                    <SelectItem value="pix">PIX</SelectItem>
-                    <SelectItem value="cartao_debito">Cartão de Débito</SelectItem>
-                    <SelectItem value="cartao_credito">Cartão de Crédito</SelectItem>
-                    <SelectItem value="a_prazo">A Prazo / Faturado</SelectItem>
-                    <SelectItem value="outro">Outro</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-1">
-                <Label htmlFor="venda-cli">Cliente (Opcional)</Label>
-                <Input
-                  id="venda-cli"
-                  placeholder="Nome do cliente balcão"
-                  value={vendaClienteNome}
-                  onChange={(e) => setVendaClienteNome(e.target.value)}
-                />
-              </div>
-            </div>
-
-            <div className="p-2 rounded bg-blue-50/50 text-[11px] text-blue-900 leading-tight">
-              ℹ️ O sistema <strong>diminui automaticamente a quantidade do insumo</strong>{' '}
-              correspondente do estoque de mídias/suprimentos.
-            </div>
-
-            <DialogFooter className="pt-2">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setIsModalNovaVendaOpen(false)}
-              >
-                Cancelar
-              </Button>
-              <Button
-                type="submit"
-                disabled={isSubmittingVenda}
-                className="bg-blue-600 hover:bg-blue-700 text-white"
-              >
-                {isSubmittingVenda ? 'Gravando e Baixando...' : 'Confirmar Venda'}
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
+      {/* Modal 3: Abertura de Cupom / Venda com Múltiplos Itens e Baixa Automática */}
+      <ModalPdvCupom
+        open={isModalNovaVendaOpen}
+        onOpenChange={setIsModalNovaVendaOpen}
+        caixaAberto={caixaAberto}
+        produtos={produtos}
+        clienteGrafica={todosClientes.find((c) => c.id === clienteGraficaId) || null}
+        onVendaFinalizada={(venda) => {
+          loadData()
+          setVendaParaImprimir(venda)
+          setIsModalImprimirVendaOpen(true)
+        }}
+      />
 
       {/* Modal 4: Cadastro de Produto / Tipo de Papel / Adesivo */}
       <Dialog open={isModalNovoProdutoOpen} onOpenChange={setIsModalNovoProdutoOpen}>
@@ -2731,6 +2739,24 @@ export default function GraficaRapida() {
         contadores={contadoresImpressao}
         vendas={vendasImpressao}
         configEmpresa={configEmpresa}
+      />
+
+      {/* Modal 6: Impressão do Cupom da Venda (Múltiplos Itens, Dados Cliente, Cabeçalho) */}
+      <VendaPrintDialog
+        open={isModalImprimirVendaOpen}
+        onOpenChange={setIsModalImprimirVendaOpen}
+        venda={vendaParaImprimir}
+        configEmpresa={configEmpresa}
+      />
+
+      {/* Modal 7: Importar e Exportar Clientes e Produtos (XLSX / CSV) */}
+      <ModalImportExport
+        open={isModalImportExportOpen}
+        onOpenChange={setIsModalImportExportOpen}
+        abaPadrao={importExportAbaPadrao}
+        onImportSucesso={() => {
+          loadData()
+        }}
       />
     </div>
   )

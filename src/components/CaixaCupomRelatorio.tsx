@@ -5,6 +5,7 @@ import type {
   GraficaVenda,
   ConfiguracoesEmpresa,
   Equipamento,
+  Cliente,
 } from '@/types'
 import {
   formatCurrency,
@@ -21,6 +22,8 @@ interface CaixaCupomRelatorioProps {
   contadores?: GraficaCaixaContador[]
   vendas?: GraficaVenda[]
   configEmpresa: ConfiguracoesEmpresa | null
+  clienteGrafica?: Cliente | null
+  cabecalhoPersonalizado?: string | null
   formato?: 'bobina' | 'a5'
 }
 
@@ -36,9 +39,12 @@ export function CaixaCupomRelatorio({
   contadores = [],
   vendas = [],
   configEmpresa,
+  clienteGrafica,
+  cabecalhoPersonalizado,
   formato = 'bobina',
 }: CaixaCupomRelatorioProps) {
   const logoSrc = configEmpresa?.logo ? configuracoesService.getLogoUrl(configEmpresa) : defaultLogo
+  const cabecalhoEfetivo = cabecalhoPersonalizado || clienteGrafica?.cabecalho_cupom
 
   // Equipamentos vinculados ao caixa: multi-equipamento (equipamentos_ids) com fallback para equipamento único legado
   const equipamentosVinculados: Equipamento[] = React.useMemo(() => {
@@ -189,22 +195,34 @@ export function CaixaCupomRelatorio({
         <div className="w-20 h-12 mx-auto flex items-center justify-center mb-1">
           <img src={logoSrc} alt="Logo" className="max-h-12 max-w-[130px] object-contain" />
         </div>
-        <h1 className="font-bold text-xs uppercase tracking-tight text-gray-900">
-          {configEmpresa?.razao_social || 'STD'}
-        </h1>
-        {configEmpresa?.nome_fantasia && (
-          <p className="text-[10px] text-gray-700">{configEmpresa.nome_fantasia}</p>
+
+        {cabecalhoEfetivo ? (
+          <div className="p-1.5 mb-2 bg-gray-50 border border-gray-300 rounded text-center whitespace-pre-line text-[10px] font-semibold text-gray-900">
+            {cabecalhoEfetivo}
+          </div>
+        ) : (
+          <>
+            <h1 className="font-bold text-xs uppercase tracking-tight text-gray-900">
+              {clienteGrafica?.nome_razao_social || configEmpresa?.razao_social || 'STD'}
+            </h1>
+            {configEmpresa?.nome_fantasia && (
+              <p className="text-[10px] text-gray-700">{configEmpresa.nome_fantasia}</p>
+            )}
+            <p className="text-[9.5px] text-gray-600">
+              CNPJ: {formatCnpjCpf(clienteGrafica?.documento || configEmpresa?.cnpj) || '-'} • Tel:{' '}
+              {formatPhone(clienteGrafica?.telefone || configEmpresa?.telefone) || '-'}
+            </p>
+            {(clienteGrafica?.endereco || configEmpresa?.endereco) && (
+              <p className="text-[9px] text-gray-500">
+                {clienteGrafica?.endereco || configEmpresa?.endereco}
+                {clienteGrafica?.cidade || configEmpresa?.cidade
+                  ? ` - ${clienteGrafica?.cidade || configEmpresa?.cidade}/${clienteGrafica?.uf || configEmpresa?.uf || ''}`
+                  : ''}
+              </p>
+            )}
+          </>
         )}
-        <p className="text-[9.5px] text-gray-600">
-          CNPJ: {formatCnpjCpf(configEmpresa?.cnpj) || '-'} • Tel:{' '}
-          {formatPhone(configEmpresa?.telefone) || '-'}
-        </p>
-        {configEmpresa?.endereco && (
-          <p className="text-[9px] text-gray-500">
-            {configEmpresa.endereco}
-            {configEmpresa.cidade ? ` - ${configEmpresa.cidade}/${configEmpresa.uf}` : ''}
-          </p>
-        )}
+
         <div className="mt-2 pt-1 border-t border-gray-400">
           <span className="font-bold text-xs uppercase tracking-wider block">
             *** FECHAMENTO DE CAIXA — GRÁFICA RÁPIDA ***
