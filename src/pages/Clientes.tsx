@@ -675,6 +675,7 @@ export default function Clientes() {
         open={isImportExportOpen}
         onOpenChange={setIsImportExportOpen}
         abaPadrao="clientes"
+        clientesExistentes={clientes}
         onImportSucesso={() => {
           loadClientes()
         }}

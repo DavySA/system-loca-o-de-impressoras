@@ -385,7 +385,8 @@ export interface ItemVendaCupom {
   quantidade: number
   preco_unitario: number
   custo_unitario?: number
-  valor_total: number
+  valor_total?: number
+  subtotal?: number
   custo_total?: number
   suprimento_baixado_id?: string
   quantidade_insumo_baixada?: number

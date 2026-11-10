@@ -2532,7 +2532,11 @@ export default function GraficaRapida() {
         onOpenChange={setIsModalNovaVendaOpen}
         caixaAberto={caixaAberto}
         produtos={produtos}
+        clientes={todosClientes}
         clienteGrafica={todosClientes.find((c) => c.id === clienteGraficaId) || null}
+        clienteGraficaConfigurado={todosClientes.find((c) => c.id === clienteGraficaId) || null}
+        cabecalhoPersonalizado={cabecalhoClienteGrafica}
+        operadorUserId={user?.id}
         onVendaFinalizada={(venda) => {
           loadData()
           setVendaParaImprimir(venda)
@@ -2739,6 +2743,8 @@ export default function GraficaRapida() {
         contadores={contadoresImpressao}
         vendas={vendasImpressao}
         configEmpresa={configEmpresa}
+        clienteGrafica={todosClientes.find((c) => c.id === clienteGraficaId) || null}
+        cabecalhoPersonalizado={cabecalhoClienteGrafica}
       />
 
       {/* Modal 6: Impressão do Cupom da Venda (Múltiplos Itens, Dados Cliente, Cabeçalho) */}
@@ -2747,6 +2753,8 @@ export default function GraficaRapida() {
         onOpenChange={setIsModalImprimirVendaOpen}
         venda={vendaParaImprimir}
         configEmpresa={configEmpresa}
+        clienteGrafica={todosClientes.find((c) => c.id === clienteGraficaId) || null}
+        cabecalhoPersonalizado={cabecalhoClienteGrafica}
       />
 
       {/* Modal 7: Importar e Exportar Clientes e Produtos (XLSX / CSV) */}
@@ -2754,6 +2762,8 @@ export default function GraficaRapida() {
         open={isModalImportExportOpen}
         onOpenChange={setIsModalImportExportOpen}
         abaPadrao={importExportAbaPadrao}
+        clientesExistentes={todosClientes}
+        produtosExistentes={produtos}
         onImportSucesso={() => {
           loadData()
         }}

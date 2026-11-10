@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react'
+import React, { useState, useRef, useEffect } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -47,8 +47,10 @@ interface ModalImportExportProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   onImportComplete?: () => void
-  clientesExistentes: Cliente[]
-  produtosExistentes: GraficaProduto[]
+  onImportSucesso?: () => void
+  onSuccess?: () => void
+  clientesExistentes?: Cliente[]
+  produtosExistentes?: GraficaProduto[]
   abaPadrao?: 'clientes' | 'produtos'
 }
 
@@ -90,12 +92,37 @@ export function ModalImportExport({
   open,
   onOpenChange,
   onImportComplete,
-  clientesExistentes,
-  produtosExistentes,
+  onImportSucesso,
+  onSuccess,
+  clientesExistentes: clientesProp = [],
+  produtosExistentes: produtosProp = [],
   abaPadrao = 'clientes',
 }: ModalImportExportProps) {
   const { toast } = useToast()
   const [tabAtiva, setTabAtiva] = useState<'clientes' | 'produtos'>(abaPadrao)
+  const [clientesLocal, setClientesLocal] = useState<Cliente[]>([])
+  const [produtosLocal, setProdutosLocal] = useState<GraficaProduto[]>([])
+
+  // Se não forem passados como props, carrega sob demanda
+  useEffect(() => {
+    if (open) {
+      if (!clientesProp || clientesProp.length === 0) {
+        clientesService.getAll().then(setClientesLocal).catch(console.error)
+      }
+      if (!produtosProp || produtosProp.length === 0) {
+        graficaService.getProdutos().then(setProdutosLocal).catch(console.error)
+      }
+    }
+  }, [open, clientesProp, produtosProp])
+
+  const clientesExistentes = clientesProp && clientesProp.length > 0 ? clientesProp : clientesLocal
+  const produtosExistentes = produtosProp && produtosProp.length > 0 ? produtosProp : produtosLocal
+
+  const notificarSucesso = () => {
+    onImportComplete?.()
+    onImportSucesso?.()
+    onSuccess?.()
+  }
 
   // Clientes states
   const [clientesPrevia, setClientesPrevia] = useState<LinhaClientePrevia[]>([])
@@ -313,7 +340,7 @@ export function ModalImportExport({
         title: 'Importação de Clientes finalizada com sucesso!',
         description: `${criados} cadastrado(s), ${atualizados} atualizado(s), ${ignorados} ignorado(s).`,
       })
-      onImportComplete?.()
+      notificarSucesso()
     } catch (e: any) {
       toast({
         variant: 'destructive',
@@ -553,7 +580,7 @@ export function ModalImportExport({
         title: 'Importação de Produtos finalizada!',
         description: `${criados} criado(s), ${atualizados} atualizado(s), ${ignorados} ignorado(s).`,
       })
-      onImportComplete?.()
+      notificarSucesso()
     } catch (e: any) {
       toast({
         variant: 'destructive',

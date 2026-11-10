@@ -45,11 +45,13 @@ interface ModalPdvCupomProps {
   onOpenChange: (open: boolean) => void
   caixaAberto: GraficaCaixa | null
   produtos: GraficaProduto[]
-  clientes: Cliente[]
-  clienteGraficaConfigurado: Cliente | null
+  clientes?: Cliente[]
+  clienteGrafica?: Cliente | null
+  clienteGraficaConfigurado?: Cliente | null
   cabecalhoPersonalizado?: string
   operadorUserId?: string
-  onVendaConcluida: (venda: GraficaVenda) => void
+  onVendaConcluida?: (venda: GraficaVenda) => void
+  onVendaFinalizada?: (venda: GraficaVenda) => void
 }
 
 export function ModalPdvCupom({
@@ -57,11 +59,13 @@ export function ModalPdvCupom({
   onOpenChange,
   caixaAberto,
   produtos,
-  clientes,
+  clientes = [],
+  clienteGrafica,
   clienteGraficaConfigurado,
   cabecalhoPersonalizado,
   operadorUserId,
   onVendaConcluida,
+  onVendaFinalizada,
 }: ModalPdvCupomProps) {
   const { toast } = useToast()
 
@@ -145,6 +149,8 @@ export function ModalPdvCupom({
       preco_unitario: Number(itemPrecoUnit),
       custo_unitario: Number(itemCustoUnit),
       subtotal,
+      valor_total: subtotal,
+      custo_total: Number((itemQuantidade * itemCustoUnit).toFixed(2)),
     }
 
     setItensCupom((prev) => [...prev, novoItem])
@@ -163,9 +169,9 @@ export function ModalPdvCupom({
   }
 
   // Cálculos do cupom
-  const totalCupom = itensCupom.reduce((acc, it) => acc + it.subtotal, 0)
+  const totalCupom = itensCupom.reduce((acc, it) => acc + (it.valor_total ?? it.subtotal ?? 0), 0)
   const totalCusto = itensCupom.reduce(
-    (acc, it) => acc + (it.custo_unitario || 0) * it.quantidade,
+    (acc, it) => acc + (it.custo_total ?? (it.custo_unitario || 0) * it.quantidade),
     0,
   )
   const lucroEstimado = totalCupom - totalCusto
@@ -192,7 +198,7 @@ export function ModalPdvCupom({
 
     setIsSubmitting(true)
     try {
-      const vendaCriada = await graficaService.registrarVendaMultiplosItens({
+      const vendaCriada = await graficaService.registrarVendaCupom({
         caixa_id: caixaAberto.id,
         operador_user_id: operadorUserId,
         itens: itensCupom,
@@ -219,7 +225,8 @@ export function ModalPdvCupom({
       onOpenChange(false)
 
       // Notificar para abrir impressão
-      onVendaConcluida(vendaCriada)
+      onVendaConcluida?.(vendaCriada)
+      onVendaFinalizada?.(vendaCriada)
     } catch (err: any) {
       toast({
         variant: 'destructive',
@@ -465,7 +472,7 @@ export function ModalPdvCupom({
                           {formatCurrency(it.preco_unitario)}
                         </TableCell>
                         <TableCell className="text-right font-mono font-bold text-blue-900">
-                          {formatCurrency(it.subtotal)}
+                          {formatCurrency(it.valor_total ?? it.subtotal ?? 0)}
                         </TableCell>
                         <TableCell className="text-center">
                           <button

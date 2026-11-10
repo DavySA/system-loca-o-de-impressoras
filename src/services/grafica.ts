@@ -424,6 +424,8 @@ export const graficaService = {
       quantidade: number
       preco_unitario: number
       custo_unitario?: number
+      subtotal?: number
+      valor_total?: number
     }>
     forma_pagamento?: GraficaVenda['forma_pagamento']
     cliente_nome?: string
@@ -597,6 +599,29 @@ export const graficaService = {
       observacoes: data.observacoes,
       darBaixaInsumo: data.darBaixaInsumo,
     })
+  },
+
+  // Alias para manter compatibilidade com componentes que chamem registrarVendaMultiplosItens
+  async registrarVendaMultiplosItens(data: {
+    caixa_id: string
+    operador_user_id?: string
+    itens: Array<{
+      produto_id?: string
+      descricao: string
+      quantidade: number
+      preco_unitario: number
+      custo_unitario?: number
+      subtotal?: number
+      valor_total?: number
+    }>
+    forma_pagamento?: GraficaVenda['forma_pagamento']
+    cliente_nome?: string
+    cliente_documento?: string
+    cliente_telefone?: string
+    observacoes?: string
+    darBaixaInsumo?: boolean
+  }): Promise<GraficaVenda> {
+    return this.registrarVendaCupom(data)
   },
 
   async estornarVenda(vendaId: string): Promise<boolean> {
