@@ -41,7 +41,49 @@ import type { Cliente, GraficaProduto } from '@/types'
 import { clientesService } from '@/services/clientes'
 import { graficaService } from '@/services/grafica'
 import { formatCurrency, formatCnpjCpf, formatPhone } from '@/lib/formatters'
+import { extractFieldErrors, getErrorMessage } from '@/lib/pocketbase/errors'
 import * as XLSX from 'xlsx'
+
+// Rótulos legíveis dos campos para mensagens de erro de gravação
+const ROTULOS_CAMPOS: Record<string, string> = {
+  nome: 'Nome',
+  nome_razao_social: 'Nome / Razão Social',
+  categoria: 'Categoria',
+  preco_venda: 'Preço de Venda',
+  custo_unitario: 'Custo Unitário',
+  estoque_atual: 'Estoque Atual',
+  estoque_minimo: 'Estoque Mínimo',
+  unidade_medida: 'Unidade de Medida',
+  formato_tamanho: 'Formato / Tamanho',
+  gramatura: 'Gramatura',
+  tipo: 'Tipo',
+  tipo_cliente: 'Tipo de Cliente',
+  status: 'Status',
+  documento: 'CNPJ / CPF',
+  email: 'E-mail',
+  uf: 'UF',
+  cidade: 'Cidade',
+}
+
+// Traduz erros de gravação do PocketBase (ex.: "Failed to create record.",
+// "Missing required value.") para mensagens legíveis em português
+const traduzirErroGravacao = (e: any): string => {
+  const fieldErrors = extractFieldErrors(e)
+  const partes = Object.entries(fieldErrors).map(([campo, msg]) => {
+    const rotulo = ROTULOS_CAMPOS[campo] || campo
+    const legivel = /required/i.test(msg)
+      ? 'valor obrigatório não informado (não pode ficar vazio ou zerado)'
+      : msg
+    return `${rotulo}: ${legivel}`
+  })
+  if (partes.length > 0) return partes.join(' · ')
+
+  const geral = getErrorMessage(e)
+  if (!geral || /^failed to (create|update) record/i.test(geral)) {
+    return 'falha ao salvar o registro no servidor — verifique os campos obrigatórios'
+  }
+  return geral
+}
 
 interface ModalImportExportProps {
   open: boolean
@@ -135,13 +177,15 @@ export function ModalImportExport({
   const [nomeArquivoProdutos, setNomeArquivoProdutos] = useState<string>('')
   const [isProcessandoProdutos, setIsProcessandoProdutos] = useState(false)
   const fileInputProdutosRef = useRef<HTMLInputElement>(null)
+  const [falhasExpandidas, setFalhasExpandidas] = useState(false)
 
-  // Resumo de conclusão
+  // Resumo de conclusão (com falhas linha a linha, quando houver)
   const [relatorioConclusao, setRelatorioConclusao] = useState<{
     tipo: 'clientes' | 'produtos'
     criados: number
     atualizados: number
     ignorados: number
+    falhas: { nome: string; motivo: string }[]
   } | null>(null)
 
   // Limpar ao fechar
@@ -150,6 +194,7 @@ export function ModalImportExport({
     setNomeArquivoClientes('')
     setProdutosPrevia([])
     setNomeArquivoProdutos('')
+    setFalhasExpandidas(false)
     setRelatorioConclusao(null)
     onOpenChange(false)
   }
@@ -294,7 +339,8 @@ export function ModalImportExport({
     reader.readAsBinaryString(file)
   }
 
-  // Executar gravação de clientes importados
+  // Executar gravação de clientes importados (resiliente: grava o que passa,
+  // reporta linha por linha o que falhou e por quê)
   const handleConfirmarImportacaoClientes = async () => {
     if (clientesPrevia.length === 0) return
     setIsProcessandoClientes(true)
@@ -302,31 +348,32 @@ export function ModalImportExport({
     let criados = 0
     let atualizados = 0
     let ignorados = 0
+    const falhas: { nome: string; motivo: string }[] = []
 
-    try {
-      for (const linha of clientesPrevia) {
-        if (linha.acao === 'ignorar') {
-          ignorados++
-          continue
-        }
+    for (const linha of clientesPrevia) {
+      if (linha.acao === 'ignorar') {
+        ignorados++
+        continue
+      }
 
-        const payload: Record<string, any> = {
-          nome_razao_social: linha.nome_razao_social,
-          documento: linha.documento || '',
-          email: linha.email || '',
-          telefone: linha.telefone || '',
-          cidade: linha.cidade || '',
-          uf: linha.uf || 'MG',
-          endereco: linha.endereco || '',
-          tipo: linha.tipo,
-          tipo_cliente: linha.tipo_cliente,
-          status: linha.status,
-        }
+      const payload: Record<string, any> = {
+        nome_razao_social: linha.nome_razao_social,
+        documento: linha.documento || '',
+        email: linha.email || '',
+        telefone: linha.telefone || '',
+        cidade: linha.cidade || '',
+        uf: linha.uf || 'MG',
+        endereco: linha.endereco || '',
+        tipo: linha.tipo,
+        tipo_cliente: linha.tipo_cliente,
+        status: linha.status,
+      }
 
-        if (linha.cabecalho_cupom) {
-          payload.cabecalho_cupom = linha.cabecalho_cupom
-        }
+      if (linha.cabecalho_cupom) {
+        payload.cabecalho_cupom = linha.cabecalho_cupom
+      }
 
+      try {
         if (linha.acao === 'atualizar' && linha.clienteExistenteId) {
           await clientesService.update(linha.clienteExistenteId, payload)
           atualizados++
@@ -334,29 +381,38 @@ export function ModalImportExport({
           await clientesService.create(payload as any)
           criados++
         }
+      } catch (e: any) {
+        falhas.push({
+          nome:
+            linha.nome_razao_social ||
+            `Linha ${ignorados + criados + atualizados + falhas.length + 1}`,
+          motivo: traduzirErroGravacao(e),
+        })
       }
+    }
 
-      setRelatorioConclusao({
-        tipo: 'clientes',
-        criados,
-        atualizados,
-        ignorados,
+    setRelatorioConclusao({
+      tipo: 'clientes',
+      criados,
+      atualizados,
+      ignorados,
+      falhas,
+    })
+
+    if (falhas.length > 0) {
+      toast({
+        variant: falhas.length >= criados + atualizados ? 'destructive' : 'default',
+        title: `Importação de Clientes concluída com pendências`,
+        description: `${criados} cadastrado(s), ${atualizados} atualizado(s), ${falhas.length} com erro (veja o detalhe na tela).`,
       })
-
+    } else {
       toast({
         title: 'Importação de Clientes finalizada com sucesso!',
         description: `${criados} cadastrado(s), ${atualizados} atualizado(s), ${ignorados} ignorado(s).`,
       })
-      notificarSucesso()
-    } catch (e: any) {
-      toast({
-        variant: 'destructive',
-        title: 'Erro na importação',
-        description: e.message || 'Falha ao gravar registros.',
-      })
-    } finally {
-      setIsProcessandoClientes(false)
     }
+    if (criados + atualizados > 0) notificarSucesso()
+    setIsProcessandoClientes(false)
   }
 
   // EXPORTAR CLIENTES EM XLSX
@@ -545,31 +601,34 @@ export function ModalImportExport({
   const handleConfirmarImportacaoProdutos = async () => {
     if (produtosPrevia.length === 0) return
     setIsProcessandoProdutos(true)
+    setFalhasExpandidas(false)
 
     let criados = 0
     let atualizados = 0
     let ignorados = 0
+    const falhas: { nome: string; motivo: string }[] = []
 
-    try {
-      for (const linha of produtosPrevia) {
-        if (linha.acao === 'ignorar') {
-          ignorados++
-          continue
-        }
+    for (const linha of produtosPrevia) {
+      if (linha.acao === 'ignorar') {
+        ignorados++
+        continue
+      }
 
-        const payload: Record<string, any> = {
-          nome: linha.nome,
-          categoria: linha.categoria,
-          formato_tamanho: linha.formato_tamanho || 'A4',
-          gramatura: linha.gramatura || '',
-          preco_venda: Number(linha.preco_venda) || 0,
-          custo_unitario: Number(linha.custo_unitario) || 0,
-          estoque_atual: Number(linha.estoque_atual) || 0,
-          estoque_minimo: Number(linha.estoque_minimo) || 0,
-          unidade_medida: linha.unidade_medida,
-          ativo: true,
-        }
+      // Números sempre como número real (nunca texto "0,00"); zero é válido
+      const payload: Record<string, any> = {
+        nome: linha.nome,
+        categoria: linha.categoria,
+        formato_tamanho: linha.formato_tamanho || 'A4',
+        gramatura: linha.gramatura || '',
+        preco_venda: Number(linha.preco_venda) || 0,
+        custo_unitario: Number(linha.custo_unitario) || 0,
+        estoque_atual: Number(linha.estoque_atual) || 0,
+        estoque_minimo: Number(linha.estoque_minimo) || 0,
+        unidade_medida: linha.unidade_medida,
+        ativo: true,
+      }
 
+      try {
         if (linha.acao === 'atualizar' && linha.produtoExistenteId) {
           await graficaService.updateProduto(linha.produtoExistenteId, payload)
           atualizados++
@@ -577,29 +636,36 @@ export function ModalImportExport({
           await graficaService.createProduto(payload as any)
           criados++
         }
+      } catch (e: any) {
+        falhas.push({
+          nome: linha.nome,
+          motivo: traduzirErroGravacao(e),
+        })
       }
+    }
 
-      setRelatorioConclusao({
-        tipo: 'produtos',
-        criados,
-        atualizados,
-        ignorados,
+    setRelatorioConclusao({
+      tipo: 'produtos',
+      criados,
+      atualizados,
+      ignorados,
+      falhas,
+    })
+
+    if (falhas.length > 0) {
+      toast({
+        variant: falhas.length >= criados + atualizados ? 'destructive' : 'default',
+        title: `Importação de Produtos concluída com pendências`,
+        description: `${criados} criado(s), ${atualizados} atualizado(s), ${falhas.length} com erro (veja o detalhe na tela).`,
       })
-
+    } else {
       toast({
         title: 'Importação de Produtos finalizada!',
         description: `${criados} criado(s), ${atualizados} atualizado(s), ${ignorados} ignorado(s).`,
       })
-      notificarSucesso()
-    } catch (e: any) {
-      toast({
-        variant: 'destructive',
-        title: 'Erro na importação de produtos',
-        description: e.message || 'Falha ao salvar registros.',
-      })
-    } finally {
-      setIsProcessandoProdutos(false)
     }
+    if (criados + atualizados > 0) notificarSucesso()
+    setIsProcessandoProdutos(false)
   }
 
   // EXPORTAR PRODUTOS EM XLSX
@@ -708,13 +774,30 @@ export function ModalImportExport({
 
             {/* Relatório se concluído */}
             {relatorioConclusao && relatorioConclusao.tipo === 'clientes' && (
-              <div className="p-3 rounded-lg bg-emerald-50 border border-emerald-200 text-xs text-emerald-900 flex items-center justify-between">
+              <div
+                className={`p-3 rounded-lg border text-xs flex items-center justify-between ${
+                  relatorioConclusao.falhas.length > 0
+                    ? 'bg-amber-50 border-amber-200 text-amber-900'
+                    : 'bg-emerald-50 border-emerald-200 text-emerald-900'
+                }`}
+              >
                 <div className="flex items-center gap-2">
-                  <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                  {relatorioConclusao.falhas.length > 0 ? (
+                    <AlertCircle className="w-5 h-5 text-amber-600" />
+                  ) : (
+                    <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                  )}
                   <span>
                     Concluído: <strong>{relatorioConclusao.criados}</strong> novos,{' '}
-                    <strong>{relatorioConclusao.atualizados}</strong> atualizados e{' '}
-                    <strong>{relatorioConclusao.ignorados}</strong> ignorados.
+                    <strong>{relatorioConclusao.atualizados}</strong> atualizados,{' '}
+                    <strong>{relatorioConclusao.ignorados}</strong> ignorados
+                    {relatorioConclusao.falhas.length > 0 && (
+                      <>
+                        {' '}
+                        e <strong>{relatorioConclusao.falhas.length}</strong> com erro
+                      </>
+                    )}
+                    .
                   </span>
                 </div>
                 <Button
@@ -730,6 +813,38 @@ export function ModalImportExport({
                 </Button>
               </div>
             )}
+
+            {/* Detalhe das falhas linha a linha (se houver) */}
+            {relatorioConclusao &&
+              relatorioConclusao.tipo === 'clientes' &&
+              relatorioConclusao.falhas.length > 0 && (
+                <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-xs text-red-900">
+                  <button
+                    type="button"
+                    className="flex w-full items-center justify-between font-semibold"
+                    onClick={() => setFalhasExpandidas((v) => !v)}
+                  >
+                    <span>
+                      {relatorioConclusao.falhas.length} cliente(s) não puderam ser gravados —
+                      clique para {falhasExpandidas ? 'ocultar' : 'ver o motivo'}
+                    </span>
+                    {falhasExpandidas ? (
+                      <AlertCircle className="w-4 h-4" />
+                    ) : (
+                      <span className="font-normal">▼</span>
+                    )}
+                  </button>
+                  {falhasExpandidas && (
+                    <ul className="mt-2 space-y-1 max-h-40 overflow-auto">
+                      {relatorioConclusao.falhas.map((f, i) => (
+                        <li key={i}>
+                          <strong>{f.nome}</strong> — {f.motivo}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
 
             {/* Tabela de prévia de Clientes */}
             {clientesPrevia.length > 0 && !relatorioConclusao && (
@@ -892,13 +1007,30 @@ export function ModalImportExport({
 
             {/* Relatório se concluído */}
             {relatorioConclusao && relatorioConclusao.tipo === 'produtos' && (
-              <div className="p-3 rounded-lg bg-emerald-50 border border-emerald-200 text-xs text-emerald-900 flex items-center justify-between">
+              <div
+                className={`p-3 rounded-lg border text-xs flex items-center justify-between ${
+                  relatorioConclusao.falhas.length > 0
+                    ? 'bg-amber-50 border-amber-200 text-amber-900'
+                    : 'bg-emerald-50 border-emerald-200 text-emerald-900'
+                }`}
+              >
                 <div className="flex items-center gap-2">
-                  <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                  {relatorioConclusao.falhas.length > 0 ? (
+                    <AlertCircle className="w-5 h-5 text-amber-600" />
+                  ) : (
+                    <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                  )}
                   <span>
                     Concluído: <strong>{relatorioConclusao.criados}</strong> novos,{' '}
-                    <strong>{relatorioConclusao.atualizados}</strong> atualizados e{' '}
-                    <strong>{relatorioConclusao.ignorados}</strong> ignorados.
+                    <strong>{relatorioConclusao.atualizados}</strong> atualizados,{' '}
+                    <strong>{relatorioConclusao.ignorados}</strong> ignorados
+                    {relatorioConclusao.falhas.length > 0 && (
+                      <>
+                        {' '}
+                        e <strong>{relatorioConclusao.falhas.length}</strong> com erro
+                      </>
+                    )}
+                    .
                   </span>
                 </div>
                 <Button
@@ -914,6 +1046,38 @@ export function ModalImportExport({
                 </Button>
               </div>
             )}
+
+            {/* Detalhe das falhas linha a linha (se houver) */}
+            {relatorioConclusao &&
+              relatorioConclusao.tipo === 'produtos' &&
+              relatorioConclusao.falhas.length > 0 && (
+                <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-xs text-red-900">
+                  <button
+                    type="button"
+                    className="flex w-full items-center justify-between font-semibold"
+                    onClick={() => setFalhasExpandidas((v) => !v)}
+                  >
+                    <span>
+                      {relatorioConclusao.falhas.length} produto(s) não puderam ser gravados —
+                      clique para {falhasExpandidas ? 'ocultar' : 'ver o motivo'}
+                    </span>
+                    {falhasExpandidas ? (
+                      <AlertCircle className="w-4 h-4" />
+                    ) : (
+                      <span className="font-normal">▼</span>
+                    )}
+                  </button>
+                  {falhasExpandidas && (
+                    <ul className="mt-2 space-y-1 max-h-40 overflow-auto">
+                      {relatorioConclusao.falhas.map((f, i) => (
+                        <li key={i}>
+                          <strong>{f.nome}</strong> — {f.motivo}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
 
             {/* Tabela de prévia de Produtos */}
             {produtosPrevia.length > 0 && !relatorioConclusao && (
@@ -936,6 +1100,13 @@ export function ModalImportExport({
                     </span>
                   </div>
                 </div>
+
+                {produtosPrevia.some((l) => l.acao !== 'ignorar' && l.preco_venda === 0) && (
+                  <div className="p-2 rounded-lg bg-amber-50 border border-amber-200 text-[11px] text-amber-900">
+                    Atenção: há produtos com <strong>Preço de Venda R$ 0,00</strong>. O sistema
+                    aceita preço zerado, mas confira se é isso mesmo antes de confirmar.
+                  </div>
+                )}
 
                 <div className="flex-1 overflow-auto border rounded-lg max-h-[360px] bg-white">
                   <Table className="text-xs">

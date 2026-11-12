@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-12T12:59:26.487Z",
+  "generatedAt": "2026-11-12T13:19:00.666Z",
   "collections": [
     {
       "name": "users",
@@ -1186,13 +1186,13 @@
         {
           "name": "custo_unitario",
           "type": "number",
-          "required": true,
+          "required": false,
           "system": false
         },
         {
           "name": "preco_venda",
           "type": "number",
-          "required": true,
+          "required": false,
           "system": false
         },
         {
