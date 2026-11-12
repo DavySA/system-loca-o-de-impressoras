@@ -345,6 +345,7 @@ export type CategoriaProdutoGrafica =
 export interface GraficaProduto {
   id: string
   nome: string
+  codigo?: string
   categoria: CategoriaProdutoGrafica
   formato_tamanho?: string // A4, A3, Carta, etc.
   gramatura?: string // 75g, 90g, 115g, 150g, 250g, etc.

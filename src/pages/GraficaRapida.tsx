@@ -24,6 +24,9 @@ import {
   CheckSquare,
   Square,
   Building2,
+  Pencil,
+  Percent,
+  TrendingUp as TrendingUpIcon,
 } from 'lucide-react'
 import { graficaService } from '@/services/grafica'
 import { equipamentosService } from '@/services/equipamentos'
@@ -119,6 +122,10 @@ export default function GraficaRapida() {
   const [isModalFecharCaixaOpen, setIsModalFecharCaixaOpen] = useState(false)
   const [isModalNovaVendaOpen, setIsModalNovaVendaOpen] = useState(false)
   const [isModalNovoProdutoOpen, setIsModalNovoProdutoOpen] = useState(false)
+  const [produtoEditando, setProdutoEditando] = useState<GraficaProduto | null>(null)
+  const [isSalvandoProduto, setIsSalvandoProduto] = useState(false)
+  // Alternador de exibição do lucro (mesmo padrão de Suprimentos): % ou R$
+  const [lucroModo, setLucroModo] = useState<'percentual' | 'valor'>('percentual')
   const [isModalImportExportOpen, setIsModalImportExportOpen] = useState(false)
   const [importExportAbaPadrao, setImportExportAbaPadrao] = useState<'clientes' | 'produtos'>(
     'clientes',
@@ -195,6 +202,7 @@ export default function GraficaRapida() {
   // Formulário Cadastro de Produto / Papel / Insumo
   const [prodForm, setProdForm] = useState({
     nome: '',
+    codigo: '',
     categoria: 'papel_sulfite' as CategoriaProdutoGrafica,
     formato_tamanho: 'A4',
     gramatura: '75g',
@@ -207,6 +215,27 @@ export default function GraficaRapida() {
     suprimento_insumo_id: '',
     consumo_insumo_por_unidade: 1,
   })
+
+  // Preenche o formulário a partir de um produto (novo ou edição)
+  const abrirFormProduto = (produto?: GraficaProduto) => {
+    setProdutoEditando(produto || null)
+    setProdForm({
+      nome: produto?.nome || '',
+      codigo: produto?.codigo || '',
+      categoria: (produto?.categoria || 'papel_sulfite') as CategoriaProdutoGrafica,
+      formato_tamanho: produto?.formato_tamanho || '',
+      gramatura: produto?.gramatura || '',
+      tipo_cor: (produto?.tipo_cor || 'nao_se_aplica') as GraficaProduto['tipo_cor'],
+      custo_unitario: produto?.custo_unitario ?? 0,
+      preco_venda: produto?.preco_venda ?? 0,
+      estoque_atual: produto?.estoque_atual ?? 0,
+      estoque_minimo: produto?.estoque_minimo ?? 0,
+      unidade_medida: (produto?.unidade_medida || 'folha') as GraficaProduto['unidade_medida'],
+      suprimento_insumo_id: produto?.suprimento_insumo_id || '',
+      consumo_insumo_por_unidade: produto?.consumo_insumo_por_unidade ?? 1,
+    })
+    setIsModalNovoProdutoOpen(true)
+  }
 
   // Filtros de relatórios
   const [filtroPeriodoRelatorio, setFiltroPeriodoRelatorio] = useState<
@@ -796,32 +825,65 @@ export default function GraficaRapida() {
     }
   }
 
-  // Cadastro de Novo Produto / Papel
+  // Cadastro / Edição de Produto / Papel
   const handleCadastrarProduto = async (e: React.FormEvent) => {
     e.preventDefault()
+    setIsSalvandoProduto(true)
+    const dados = {
+      ...prodForm,
+      custo_unitario: Number(prodForm.custo_unitario),
+      preco_venda: Number(prodForm.preco_venda),
+      estoque_atual: Number(prodForm.estoque_atual),
+      estoque_minimo: Number(prodForm.estoque_minimo),
+      suprimento_insumo_id: prodForm.suprimento_insumo_id || undefined,
+      consumo_insumo_por_unidade: Number(prodForm.consumo_insumo_por_unidade) || 1,
+    }
     try {
-      await graficaService.createProduto({
-        ...prodForm,
-        custo_unitario: Number(prodForm.custo_unitario),
-        preco_venda: Number(prodForm.preco_venda),
-        estoque_atual: Number(prodForm.estoque_atual),
-        estoque_minimo: Number(prodForm.estoque_minimo),
-        suprimento_insumo_id: prodForm.suprimento_insumo_id || undefined,
-        consumo_insumo_por_unidade: Number(prodForm.consumo_insumo_por_unidade) || 1,
-        ativo: true,
-      })
-
-      toast({
-        title: 'Produto/Insumo cadastrado!',
-        description: 'Disponível imediatamente no PDV do caixa.',
-      })
+      if (produtoEditando) {
+        await graficaService.updateProduto(produtoEditando.id, dados)
+        toast({
+          title: 'Produto atualizado!',
+          description: `"${prodForm.nome}" salvo com sucesso no catálogo da Gráfica.`,
+        })
+      } else {
+        await graficaService.createProduto({ ...dados, ativo: true })
+        toast({
+          title: 'Produto/Insumo cadastrado!',
+          description: 'Disponível imediatamente no PDV do caixa.',
+        })
+      }
       setIsModalNovoProdutoOpen(false)
+      setProdutoEditando(null)
       loadData()
     } catch (err: any) {
       toast({
         variant: 'destructive',
-        title: 'Erro ao cadastrar produto',
+        title: produtoEditando ? 'Erro ao salvar alterações' : 'Erro ao cadastrar produto',
         description: err.message,
+      })
+    } finally {
+      setIsSalvandoProduto(false)
+    }
+  }
+
+  // Exclusão de produto — operador não pode excluir, apenas administrador
+  const podeExcluirProdutos = user?.role !== 'operador'
+  const handleExcluirProduto = async (produto: GraficaProduto) => {
+    if (
+      !confirm(
+        `Deseja excluir o produto "${produto.nome}" do catálogo? Essa ação não pode ser desfeita.`,
+      )
+    )
+      return
+    try {
+      await graficaService.deleteProduto(produto.id)
+      toast({ title: 'Produto excluído', description: `"${produto.nome}" removido do catálogo.` })
+      loadData()
+    } catch (err: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Erro ao excluir produto',
+        description: err.message || 'Sem permissão ou produto vinculado a vendas.',
       })
     }
   }
@@ -1378,7 +1440,7 @@ export default function GraficaRapida() {
                     Importar / Exportar
                   </Button>
                   <Button
-                    onClick={() => setIsModalNovoProdutoOpen(true)}
+                    onClick={() => abrirFormProduto()}
                     className="bg-blue-600 hover:bg-blue-700 text-white text-xs h-8"
                   >
                     <Plus className="w-3.5 h-3.5 mr-1" /> Novo Produto/Papel
@@ -1392,6 +1454,7 @@ export default function GraficaRapida() {
                   <thead className="bg-gray-50 text-gray-600 font-semibold border-b">
                     <tr>
                       <th className="py-2.5 px-3">Item / Tipo de Papel</th>
+                      <th className="py-2.5 px-3">Código</th>
                       <th className="py-2.5 px-3">Categoria</th>
                       <th className="py-2.5 px-3">Formato / Gramatura</th>
                       <th className="py-2.5 px-3 text-center">Estoque Atual</th>
@@ -1399,8 +1462,9 @@ export default function GraficaRapida() {
                       <th className="py-2.5 px-3 text-right">Custo Un.</th>
                       <th className="py-2.5 px-3 text-right">Preço Venda</th>
                       <th className="py-2.5 px-3 text-right font-bold text-emerald-700">
-                        Lucro Unit.
+                        Lucro ({lucroModo === 'percentual' ? '%' : 'R$'})
                       </th>
+                      <th className="py-2.5 px-3 text-center">Ações</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
@@ -1415,7 +1479,15 @@ export default function GraficaRapida() {
                           key={p.id}
                           className={`hover:bg-gray-50 ${isAbaixo ? 'bg-amber-50/50' : ''}`}
                         >
-                          <td className="py-2.5 px-3 font-semibold text-gray-900">{p.nome}</td>
+                          <td className="py-2.5 px-3 font-semibold text-gray-900">
+                            {p.nome}
+                            {p.ativo === false && (
+                              <span className="ml-2 text-[10px] font-normal text-gray-400">
+                                (inativo)
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-2.5 px-3 font-mono text-gray-600">{p.codigo || '—'}</td>
                           <td className="py-2.5 px-3">
                             <span className="capitalize px-2 py-0.5 rounded text-[10px] font-semibold bg-blue-50 text-blue-700 border border-blue-200">
                               {p.categoria.replace('_', ' ')}
@@ -1443,7 +1515,33 @@ export default function GraficaRapida() {
                             {formatCurrency(p.preco_venda)}
                           </td>
                           <td className="py-2.5 px-3 text-right font-mono font-bold text-emerald-700">
-                            +{formatCurrency(lucro)} ({lucroPct.toFixed(0)}%)
+                            {lucroModo === 'percentual'
+                              ? `${lucroPct >= 0 ? '+' : ''}${lucroPct.toFixed(1)}%`
+                              : `+${formatCurrency(lucro)}`}
+                          </td>
+                          <td className="py-2.5 px-3">
+                            <div className="flex items-center justify-center gap-1">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => abrirFormProduto(p)}
+                                className="h-7 w-7 p-0 text-blue-600 hover:text-blue-800 hover:bg-blue-50"
+                                title="Editar produto"
+                              >
+                                <Pencil className="w-3.5 h-3.5" />
+                              </Button>
+                              {podeExcluirProdutos && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleExcluirProduto(p)}
+                                  className="h-7 w-7 p-0 text-red-500 hover:text-red-700 hover:bg-red-50"
+                                  title="Excluir"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </Button>
+                              )}
+                            </div>
                           </td>
                         </tr>
                       )
@@ -2545,24 +2643,46 @@ export default function GraficaRapida() {
       />
 
       {/* Modal 4: Cadastro de Produto / Tipo de Papel / Adesivo */}
-      <Dialog open={isModalNovoProdutoOpen} onOpenChange={setIsModalNovoProdutoOpen}>
+      <Dialog
+        open={isModalNovoProdutoOpen}
+        onOpenChange={(open) => {
+          setIsModalNovoProdutoOpen(open)
+          if (!open) setProdutoEditando(null)
+        }}
+      >
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <Package className="w-5 h-5 text-blue-600" /> Cadastrar Produto / Insumo da Gráfica
+              <Package className="w-5 h-5 text-blue-600" />{' '}
+              {produtoEditando
+                ? 'Editar Produto / Insumo da Gráfica'
+                : 'Cadastrar Produto / Insumo da Gráfica'}
             </DialogTitle>
           </DialogHeader>
 
           <form onSubmit={handleCadastrarProduto} className="space-y-3 pt-1 text-xs">
-            <div className="space-y-1">
-              <Label htmlFor="prod-nome">Nome do Produto / Papel *</Label>
-              <Input
-                id="prod-nome"
-                placeholder="Ex: Papel Sulfite A4 75g / Adesivo Couchê A3"
-                value={prodForm.nome}
-                onChange={(e) => setProdForm({ ...prodForm, nome: e.target.value })}
-                required
-              />
+            <div className="grid grid-cols-3 gap-2">
+              <div className="col-span-2 space-y-1">
+                <Label htmlFor="prod-nome">Nome do Produto / Papel *</Label>
+                <Input
+                  id="prod-nome"
+                  placeholder="Ex: Papel Sulfite A4 75g / Adesivo Couchê A3"
+                  value={prodForm.nome}
+                  onChange={(e) => setProdForm({ ...prodForm, nome: e.target.value })}
+                  required
+                />
+              </div>
+
+              <div className="space-y-1">
+                <Label htmlFor="prod-cod">Código / SKU</Label>
+                <Input
+                  id="prod-cod"
+                  placeholder="Ex: PAP-001"
+                  value={prodForm.codigo}
+                  onChange={(e) => setProdForm({ ...prodForm, codigo: e.target.value })}
+                  className="font-mono"
+                />
+              </div>
             </div>
 
             <div className="grid grid-cols-2 gap-2">
@@ -2611,6 +2731,26 @@ export default function GraficaRapida() {
                 />
               </div>
 
+              <div className="space-y-1">
+                <Label htmlFor="prod-tipocor">Cor de Impressão</Label>
+                <Select
+                  value={prodForm.tipo_cor}
+                  onValueChange={(val: any) => setProdForm({ ...prodForm, tipo_cor: val })}
+                >
+                  <SelectTrigger id="prod-tipocor">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="nao_se_aplica">Não se aplica</SelectItem>
+                    <SelectItem value="mono">Monocromática</SelectItem>
+                    <SelectItem value="color">Colorida</SelectItem>
+                    <SelectItem value="dual">Mono e Color</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
               <div className="space-y-1">
                 <Label htmlFor="prod-un">Unidade de Medida</Label>
                 <Select
@@ -2664,6 +2804,59 @@ export default function GraficaRapida() {
                   className="font-mono text-emerald-700 font-bold"
                 />
               </div>
+            </div>
+
+            {/* Margem de lucro recalculada ao vivo (alternador % / R$, padrão Suprimentos) */}
+            <div className="p-2.5 rounded-lg bg-gray-50 border border-gray-200 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="text-gray-600 font-medium whitespace-nowrap">
+                  Margem de Lucro:
+                </span>
+                <div className="flex bg-white p-0.5 rounded-md border shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setLucroModo('percentual')}
+                    className={`px-2 py-0.5 rounded text-[10px] font-semibold transition-colors ${
+                      lucroModo === 'percentual'
+                        ? 'bg-blue-100 text-blue-700'
+                        : 'text-gray-500 hover:text-gray-700'
+                    }`}
+                  >
+                    %
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setLucroModo('valor')}
+                    className={`px-2 py-0.5 rounded text-[10px] font-semibold transition-colors ${
+                      lucroModo === 'valor'
+                        ? 'bg-blue-100 text-blue-700'
+                        : 'text-gray-500 hover:text-gray-700'
+                    }`}
+                  >
+                    R$
+                  </button>
+                </div>
+              </div>
+              {(() => {
+                const custo = Number(prodForm.custo_unitario) || 0
+                const venda = Number(prodForm.preco_venda) || 0
+                const lucroValor = venda - custo
+                const lucroPct = custo > 0 ? (lucroValor / custo) * 100 : null
+                const positivo = lucroValor > 0
+                return (
+                  <span
+                    className={`font-bold font-mono text-[11px] whitespace-nowrap ${
+                      positivo ? 'text-emerald-700' : 'text-red-600'
+                    }`}
+                  >
+                    {venda > 0
+                      ? lucroModo === 'percentual'
+                        ? `${positivo ? '+' : ''}${(lucroPct ?? 100).toFixed(1)}%`
+                        : `${positivo ? '+' : ''}${formatCurrency(lucroValor)}`
+                      : '—'}
+                  </span>
+                )
+              })()}
             </div>
 
             <div className="grid grid-cols-2 gap-2">
@@ -2727,8 +2920,16 @@ export default function GraficaRapida() {
               >
                 Cancelar
               </Button>
-              <Button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white">
-                Salvar Produto
+              <Button
+                type="submit"
+                disabled={isSalvandoProduto}
+                className="bg-blue-600 hover:bg-blue-700 text-white"
+              >
+                {isSalvandoProduto
+                  ? 'Salvando...'
+                  : produtoEditando
+                    ? 'Salvar Alterações'
+                    : 'Salvar Produto'}
               </Button>
             </DialogFooter>
           </form>

@@ -365,7 +365,7 @@ export function ModalPdvCupom({
                   </Select>
                 </div>
 
-                <div className="sm:col-span-4 space-y-1">
+                <div className="sm:col-span-3 space-y-1">
                   <Label htmlFor="pdv-desc" className="text-[11px] text-gray-600">
                     Descrição do Item *
                   </Label>
@@ -379,7 +379,7 @@ export function ModalPdvCupom({
                   />
                 </div>
 
-                <div className="sm:col-span-1 space-y-1">
+                <div className="sm:col-span-2 space-y-1">
                   <Label htmlFor="pdv-qtd" className="text-[11px] text-gray-600">
                     Qtd *
                   </Label>
@@ -390,7 +390,7 @@ export function ModalPdvCupom({
                     value={itemQuantidade}
                     onChange={(e) => setItemQuantidade(Math.max(1, parseInt(e.target.value) || 1))}
                     required
-                    className="h-8 text-xs bg-white font-mono text-center"
+                    className="h-8 w-20 mx-auto text-xs bg-white font-mono font-semibold text-center"
                   />
                 </div>
 
