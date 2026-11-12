@@ -156,12 +156,15 @@ export function ModalImportExport({
 
   // Normalização de chaves de coluna de planilha
   const normalizarChave = (str: string) => {
-    return str
+    return String(str ?? '')
       .toLowerCase()
       .normalize('NFD')
       .replace(/[\u0300-\u036f]/g, '')
       .replace(/[^a-z0-9]/g, '')
   }
+
+  // Converte qualquer célula da planilha em string segura (nunca undefined/null)
+  const textoSeguro = (v: any): string => String(v ?? '').trim()
 
   const limparDigitos = (v: any) => String(v || '').replace(/\D/g, '')
 
@@ -241,7 +244,11 @@ export function ModalImportExport({
             if (docDigitos && c.documento) {
               return limparDigitos(c.documento) === docDigitos
             }
-            return c.nome_razao_social.trim().toLowerCase() === String(nome).trim().toLowerCase()
+            return (
+              String(c.nome_razao_social ?? '')
+                .trim()
+                .toLowerCase() === String(nome).trim().toLowerCase()
+            )
           })
 
           let acao: 'criar' | 'atualizar' | 'ignorar' = 'criar'
@@ -481,7 +488,10 @@ export function ModalImportExport({
 
           // Casamento por nome de produto existente
           const existente = produtosExistentes.find(
-            (p) => p.nome.trim().toLowerCase() === String(nome).trim().toLowerCase(),
+            (p) =>
+              String(p.nome ?? '')
+                .trim()
+                .toLowerCase() === String(nome).trim().toLowerCase(),
           )
 
           let acao: 'criar' | 'atualizar' | 'ignorar' = 'criar'

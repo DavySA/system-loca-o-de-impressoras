@@ -41,8 +41,8 @@ export function formatDateTime(dateString?: string | null): string {
     if (isNaN(date.getTime())) return '-'
     return date.toLocaleString('pt-BR', {
       day: '2-digit',
-      month: '2-digit',
       year: 'numeric',
+      month: '2-digit',
       hour: '2-digit',
       minute: '2-digit',
     })
@@ -89,8 +89,9 @@ export function formatOSCode(idOrSeq?: string): string {
   return `OS-${idOrSeq.padStart(4, '0')}`
 }
 
-export function formatCnpjCpf(value: string): string {
-  const clean = value.replace(/\D/g, '')
+export function formatCnpjCpf(value: string | null | undefined): string {
+  if (!value) return ''
+  const clean = String(value).replace(/\D/g, '')
   if (clean.length <= 11) {
     // CPF: 000.000.000-00
     return clean
@@ -108,8 +109,9 @@ export function formatCnpjCpf(value: string): string {
     .slice(0, 18)
 }
 
-export function formatPhone(value: string): string {
-  const clean = value.replace(/\D/g, '')
+export function formatPhone(value: string | null | undefined): string {
+  if (!value) return ''
+  const clean = String(value).replace(/\D/g, '')
   if (clean.length <= 10) {
     // (11) 1234-5678
     return clean
