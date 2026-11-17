@@ -7,7 +7,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
-import { Printer, Download } from 'lucide-react'
+import { Printer } from 'lucide-react'
 import type { GraficaVenda, GraficaCaixa, ConfiguracoesEmpresa, Cliente } from '@/types'
 import { VendaCupomRelatorio } from './VendaCupomRelatorio'
 
@@ -35,8 +35,63 @@ export function VendaPrintDialog({
 
   if (!venda) return null
 
+  // Gera uma janela dedicada contendo APENAS o cupom desta venda, com os
+  // mesmos estilos da pré-visualização (Tailwind + @page do formato escolhido).
+  // Corrige o bug em que window.print() imprimia a página inteira, sem formatação.
   const handlePrint = () => {
-    window.print()
+    const content = printRef.current?.innerHTML
+    if (!content) return
+
+    const printWindow = window.open('', '_blank', 'width=680,height=800')
+    if (!printWindow) {
+      window.print()
+      return
+    }
+
+    const pageSizeStyle =
+      formato === 'bobina'
+        ? `@page { size: 80mm auto; margin: 4mm 4mm; } body { width: 100%; max-width: 80mm; margin: 0 auto; }`
+        : `@page { size: A5 portrait; margin: 8mm 8mm; } body { width: 100%; max-width: 148mm; margin: 0 auto; }`
+
+    printWindow.document.open()
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html lang="pt-BR">
+        <head>
+          <meta charset="utf-8" />
+          <title>Cupom de Venda ${venda.numero_cupom ? `#${venda.numero_cupom}` : ''} - STD</title>
+          <script src="https://cdn.tailwindcss.com"></script>
+          <style>
+            ${pageSizeStyle}
+            @media print {
+              body {
+                font-family: monospace, -apple-system, sans-serif;
+                color: #000;
+                background-color: #fff;
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+                padding: 0 !important;
+              }
+              .no-print { display: none !important; }
+            }
+          </style>
+        </head>
+        <body class="p-2 bg-white flex justify-center">
+          <div style="width: 100%;">
+            ${content}
+          </div>
+          <script>
+            window.addEventListener('load', () => {
+              setTimeout(() => {
+                window.focus();
+                window.print();
+              }, 350);
+            });
+          </script>
+        </body>
+      </html>
+    `)
+    printWindow.document.close()
   }
 
   return (
