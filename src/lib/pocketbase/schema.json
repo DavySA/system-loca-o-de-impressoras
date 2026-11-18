@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-17T14:21:50.986Z",
+  "generatedAt": "2026-11-18T00:05:22.114Z",
   "collections": [
     {
       "name": "users",
@@ -1239,6 +1239,18 @@
           "type": "text",
           "required": false,
           "system": false
+        },
+        {
+          "name": "preco_atacado",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "desconto_maximo_percentual",
+          "type": "number",
+          "required": false,
+          "system": false
         }
       ],
       "indexes": [
@@ -1703,6 +1715,24 @@
           "type": "json",
           "required": false,
           "system": false
+        },
+        {
+          "name": "desconto",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "valor_entregue",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "troco",
+          "type": "number",
+          "required": false,
+          "system": false
         }
       ],
       "indexes": [
@@ -2055,6 +2085,12 @@
         {
           "name": "cabecalho_cupom_padrao",
           "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "desconto_maximo_percentual",
+          "type": "number",
           "required": false,
           "system": false
         }
