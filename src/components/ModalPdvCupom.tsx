@@ -107,14 +107,23 @@ export function ModalPdvCupom({
     }
   }
 
-  // Ao selecionar um produto do catálogo
-  const handleSelecionarProduto = (prodId: string) => {
-    setItemProdutoId(prodId)
-    const prod = produtos.find((p) => p.id === prodId)
+  // Ao digitar na busca do produto: filtra o catálogo via <datalist> e, se o texto
+  // corresponder exatamente a um produto cadastrado (ou já estava selecionado e o
+  // usuário digitou por cima), preenche preço/custo automaticamente.
+  const handleDigitarDescricaoProduto = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const texto = e.target.value
+    setItemDescricao(texto)
+    const normaliza = (s: string) => s.trim().toLowerCase()
+    const prod =
+      produtos.find((p) => p.id === itemProdutoId && normaliza(p.nome) === normaliza(texto)) ||
+      produtos.find((p) => normaliza(p.nome) === normaliza(texto))
     if (prod) {
-      setItemDescricao(prod.nome)
+      setItemProdutoId(prod.id)
       setItemPrecoUnit(prod.preco_venda || 0)
       setItemCustoUnit(prod.custo_unitario || 0)
+    } else if (itemProdutoId) {
+      // o texto digitado deixou de corresponder ao produto selecionado: vira item livre
+      setItemProdutoId('')
     }
   }
 
@@ -348,21 +357,30 @@ export function ModalPdvCupom({
               <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-end">
                 <div className="sm:col-span-4 space-y-1">
                   <Label htmlFor="pdv-prod" className="text-[11px] text-gray-600">
-                    Catálogo de Insumos / Papéis
+                    Buscar Produto (digite parte da descrição)
                   </Label>
-                  <Select value={itemProdutoId} onValueChange={handleSelecionarProduto}>
-                    <SelectTrigger id="pdv-prod" className="h-8 text-xs bg-white">
-                      <SelectValue placeholder="Selecione ou digite ao lado..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {produtos.map((p) => (
-                        <SelectItem key={p.id} value={p.id}>
-                          {p.nome} — {formatCurrency(p.preco_venda)} (Estoque:{' '}
-                          {p.estoque_atual || 0})
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <Input
+                    id="pdv-prod"
+                    list="pdv-prod-lista"
+                    inputMode="text"
+                    autoComplete="off"
+                    placeholder="Digite para filtrar o catálogo..."
+                    value={itemDescricao}
+                    onChange={handleDigitarDescricaoProduto}
+                    className="h-8 text-xs bg-white"
+                  />
+                  <datalist id="pdv-prod-lista">
+                    {produtos.map((p) => (
+                      <option key={p.id} value={p.nome}>
+                        {formatCurrency(p.preco_venda)} (Estoque: {p.estoque_atual || 0})
+                      </option>
+                    ))}
+                  </datalist>
+                  {itemProdutoId && (
+                    <p className="text-[10px] text-emerald-700 font-medium">
+                      Produto do catálogo selecionado (estoque terá baixa ao finalizar).
+                    </p>
+                  )}
                 </div>
 
                 <div className="sm:col-span-3 space-y-1">
