@@ -211,7 +211,6 @@ export default function OrdensServico() {
       solicitante_nome: '',
       solicitante_telefone: '',
       tipo_atendimento: 'contrato',
-      equipamento_id: '',
     })
     setFieldErrors({})
     setIsModalOpen(true)
@@ -283,12 +282,13 @@ export default function OrdensServico() {
       const novaOS = await ordensServicoService.create(
         {
           cliente_id: formData.cliente_id,
-          equipamento_id: formData.equipamento_id,
+          // Em atendimento Particular a O.S. pode ser aberta sem equipamento
+          equipamento_id: formData.equipamento_id || undefined,
           servico_id:
             formData.servico_id && formData.servico_id !== 'nenhum'
               ? formData.servico_id
               : undefined,
-          prioridade: formData.prioridade,
+          prioridade: formData.prioridade as 'baixa' | 'media' | 'alta',
           descricao_problema: formData.descricao_problema,
           data_agendada: formData.data_agendada
             ? new Date(formData.data_agendada).toISOString()
@@ -298,8 +298,6 @@ export default function OrdensServico() {
           solicitante_nome: formData.solicitante_nome.trim() || undefined,
           solicitante_telefone: formData.solicitante_telefone.trim() || undefined,
           tipo_atendimento: formData.tipo_atendimento,
-          // Em atendimento Particular a O.S. pode ser aberta sem equipamento
-          equipamento_id: formData.equipamento_id || undefined,
           status: 'aberta',
         },
         user?.name || 'Administrador',
@@ -632,12 +630,7 @@ export default function OrdensServico() {
               </div>
 
               <div className="space-y-1.5">
-                <Label htmlFor="os-eq">
-                  Equipamento{' '}
-                  {formData.tipo_atendimento === 'contrato' && (
-                    <span className="text-red-500">*</span>
-                  )}
-                </Label>{' '}
+                <Label htmlFor="os-cli">Cliente</Label>
                 <Select
                   value={formData.cliente_id}
                   onValueChange={(val) => setFormData({ ...formData, cliente_id: val })}
@@ -660,14 +653,27 @@ export default function OrdensServico() {
                   <p className="text-xs text-red-600">{fieldErrors.cliente_id}</p>
                 )}
               </div>
+            </div>
 
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-1.5">
                 <Label htmlFor="os-eq">
-                  Equipamento <span className="text-red-500">*</span>
+                  Equipamento{' '}
+                  {formData.tipo_atendimento === 'contrato' && (
+                    <span className="text-red-500">*</span>
+                  )}
+                  {formData.tipo_atendimento === 'particular' && (
+                    <span className="text-gray-400 font-normal">(Opcional)</span>
+                  )}
                 </Label>
                 <Select
-                  value={formData.equipamento_id}
-                  onValueChange={(val) => setFormData({ ...formData, equipamento_id: val })}
+                  value={formData.equipamento_id || 'nenhum'}
+                  onValueChange={(val) =>
+                    setFormData({
+                      ...formData,
+                      equipamento_id: val === 'nenhum' ? '' : val,
+                    })
+                  }
                 >
                   <SelectTrigger
                     id="os-eq"
@@ -676,6 +682,9 @@ export default function OrdensServico() {
                     <SelectValue placeholder="Selecione o equipamento" />
                   </SelectTrigger>
                   <SelectContent>
+                    {formData.tipo_atendimento === 'particular' && (
+                      <SelectItem value="nenhum">Nenhum / visita sem equipamento</SelectItem>
+                    )}
                     {availableEquipamentos.map((eq) => (
                       <SelectItem key={eq.id} value={eq.id}>
                         {eq.marca} {eq.modelo} (S/N: {eq.numero_serie})
@@ -755,41 +764,8 @@ export default function OrdensServico() {
               )}
             </div>
 
-            {/* Solicitante (opcional): quem pediu a abertura da O.S. */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1 border-t border-gray-100">
-              <div className="space-y-1.5">
-                <Label htmlFor="os-sol-nome">Solicitante (Opcional)</Label>
-                <Input
-                  id="os-sol-nome"
-                  placeholder="Nome de quem solicitou"
-                  value={formData.solicitante_nome}
-                  onChange={(e) => setFormData({ ...formData, solicitante_nome: e.target.value })}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="os-sol-tel">Telefone do Solicitante</Label>
-                <Input
-                  id="os-sol-tel"
-                  placeholder="(00) 00000-0000"
-                  value={formData.solicitante_telefone}
-                  onChange={(e) =>
-                    setFormData({ ...formData, solicitante_telefone: e.target.value })
-                  }
-                />
-              </div>
-            </div>
-
+            {/* Técnico + Solicitante: quem pediu a abertura da O.S. (opcional) */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <Label htmlFor="os-dt-ag">Data Agendada</Label>
-                <Input
-                  id="os-dt-ag"
-                  type="date"
-                  value={formData.data_agendada}
-                  onChange={(e) => setFormData({ ...formData, data_agendada: e.target.value })}
-                />
-              </div>
-
               <div className="space-y-1.5">
                 <Label htmlFor="os-tec">Técnico Responsável</Label>
                 {tecnicos.length > 0 ? (
@@ -824,6 +800,33 @@ export default function OrdensServico() {
                     }
                   />
                 )}
+              </div>
+            </div>
+
+            {/* Solicitante (opcional): quem pediu a abertura da O.S. */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1 border-t border-gray-100">
+              <div className="space-y-1.5">
+                <Label htmlFor="os-sol-nome">Solicitante</Label>
+                <Input
+                  id="os-sol-nome"
+                  placeholder="Nome de quem solicitou"
+                  value={formData.solicitante_nome}
+                  onChange={(e) => setFormData({ ...formData, solicitante_nome: e.target.value })}
+                />
+                <p className="text-[10px] text-gray-500">
+                  Opcional — o cliente pode ter vários colaboradores.
+                </p>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="os-sol-tel">Telefone do Solicitante</Label>
+                <Input
+                  id="os-sol-tel"
+                  placeholder="(00) 00000-0000"
+                  value={formData.solicitante_telefone}
+                  onChange={(e) =>
+                    setFormData({ ...formData, solicitante_telefone: e.target.value })
+                  }
+                />
               </div>
             </div>
 

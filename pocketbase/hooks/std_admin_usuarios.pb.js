@@ -6,21 +6,21 @@
  * rotas rodam no servidor com privilégio de superuser e só aceitam requisições
  * de um usuário autenticado com role 'administrador'.
  *
- * Rotas:
- *   POST /api/std/admin/senha    { usuario_id, nova_senha }
- *   POST /api/std/admin/usuario  { usuario_id, name?, role?, cliente_id?, permissoes? }
+ * Rotas (namespace reservado '/api/' não pode ser usado por rotas novas):
+ *   POST /backend/v1/std/admin/senha    { usuario_id, nova_senha }
+ *   POST /backend/v1/std/admin/usuario  { usuario_id, name?, role?, cliente_id?, permissoes? }
  */
 
 routerAdd(
   'POST',
-  '/api/std/admin/senha',
+  '/backend/v1/std/admin/senha',
   (e) => {
     const auth = e.auth
     if (!auth || auth.get('role') !== 'administrador') {
       return e.json(403, { ok: false, error: 'Apenas administradores podem definir senhas.' })
     }
 
-    const dados = $apis.requestInfo(e).body
+    const dados = e.requestInfo().body
     const usuarioId = (dados.usuario_id || '').toString().trim()
     const novaSenha = (dados.nova_senha || '').toString()
 
@@ -56,14 +56,14 @@ routerAdd(
 
 routerAdd(
   'POST',
-  '/api/std/admin/usuario',
+  '/backend/v1/std/admin/usuario',
   (e) => {
     const auth = e.auth
     if (!auth || auth.get('role') !== 'administrador') {
       return e.json(403, { ok: false, error: 'Apenas administradores podem editar usuários.' })
     }
 
-    const dados = $apis.requestInfo(e).body
+    const dados = e.requestInfo().body
     const usuarioId = (dados.usuario_id || '').toString().trim()
     if (!usuarioId) {
       return e.json(400, { ok: false, error: 'Usuário não informado.' })
@@ -88,7 +88,7 @@ routerAdd(
     }
 
     if (dados.cliente_id !== undefined) {
-      // string vazia limpa o vínculo; valor preenchido precisa existir em clientes
+      // string vazia/ausente limpa o vínculo; valor preenchido precisa existir em clientes
       const clienteId = (dados.cliente_id || '').toString().trim()
       if (clienteId) {
         try {

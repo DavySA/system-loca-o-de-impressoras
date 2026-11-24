@@ -34,7 +34,7 @@ async function adminPost<T>(path: string, body: Record<string, unknown>): Promis
 export const usuariosAdminService = {
   /** Define a senha de um usuário diretamente (admin autenticado). */
   async setSenha(id: string, novaSenha: string): Promise<AdminSetPasswordResult> {
-    return adminPost<AdminSetPasswordResult>('/api/std/admin/senha', {
+    return adminPost<AdminSetPasswordResult>('/backend/v1/std/admin/senha', {
       usuario_id: id,
       nova_senha: novaSenha,
     })
@@ -45,7 +45,7 @@ export const usuariosAdminService = {
     id: string,
     dados: { name?: string; role?: string; cliente_id?: string; permissoes?: string[] },
   ): Promise<AdminUpdateUserResult> {
-    return adminPost<AdminUpdateUserResult>('/api/std/admin/usuario', {
+    return adminPost<AdminUpdateUserResult>('/backend/v1/std/admin/usuario', {
       usuario_id: id,
       ...dados,
     })

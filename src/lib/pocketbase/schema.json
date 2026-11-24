@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-24T03:51:17.898Z",
+  "generatedAt": "2026-11-24T04:30:27.957Z",
   "collections": [
     {
       "name": "users",
@@ -602,6 +602,18 @@
           "type": "text",
           "required": false,
           "system": false
+        },
+        {
+          "name": "solicitante_nome",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "solicitante_telefone",
+          "type": "text",
+          "required": false,
+          "system": false
         }
       ],
       "indexes": [
@@ -1141,23 +1153,6 @@
           "system": false
         },
         {
-          "name": "categoria",
-          "type": "select",
-          "required": true,
-          "system": false,
-          "selectValues": [
-            "papel_sulfite",
-            "papel_couche",
-            "adesivo",
-            "impressao",
-            "copia",
-            "scanner",
-            "plastificacao",
-            "encadernacao",
-            "outro"
-          ]
-        },
-        {
           "name": "formato_tamanho",
           "type": "text",
           "required": false,
@@ -1255,6 +1250,12 @@
         {
           "name": "desconto_maximo_percentual",
           "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "categoria",
+          "type": "text",
           "required": false,
           "system": false
         }
