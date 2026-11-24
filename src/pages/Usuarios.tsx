@@ -484,9 +484,9 @@ export default function Usuarios() {
     const q = searchTerm.toLowerCase()
     const matchesSearch =
       (u.name && u.name.toLowerCase().includes(q)) ||
-      u.email.toLowerCase().includes(q) ||
-      (u.expand?.cliente_id?.nome_razao_social &&
-        u.expand.cliente_id.nome_razao_social.toLowerCase().includes(q))
+      ((u.email || '') as string).toLowerCase().includes(q) ||
+      (!!u.expand?.cliente_id?.nome_razao_social &&
+        String(u.expand.cliente_id.nome_razao_social).toLowerCase().includes(q))
 
     const matchesRole = filterRole === 'todos' || u.role === filterRole
     return matchesSearch && matchesRole

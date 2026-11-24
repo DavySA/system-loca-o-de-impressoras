@@ -931,11 +931,12 @@ export default function GraficaRapida() {
   // Produtos filtrados
   const produtosFiltrados = useMemo(() => {
     return produtos.filter((p) => {
-      const q = searchProduto.toLowerCase()
+      const q = (searchProduto || '').toLowerCase()
       return (
-        p.nome.toLowerCase().includes(q) ||
-        p.categoria.toLowerCase().includes(q) ||
-        (p.formato_tamanho || '').toLowerCase().includes(q)
+        (p.nome || '').toLowerCase().includes(q) ||
+        (p.categoria || '').toLowerCase().includes(q) ||
+        (p.formato_tamanho || '').toLowerCase().includes(q) ||
+        (p.codigo || '').toLowerCase().includes(q)
       )
     })
   }, [produtos, searchProduto])

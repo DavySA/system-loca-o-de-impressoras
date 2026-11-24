@@ -1,4 +1,5 @@
-import React, { useState } from 'react'
+import React, { useMemo, useRef, useState } from 'react'
+import { cn } from '@/lib/utils'
 import {
   Dialog,
   DialogContent,
@@ -84,6 +85,9 @@ export function ModalPdvCupom({
   const [itemQuantidade, setItemQuantidade] = useState<number>(1)
   const [itemPrecoUnit, setItemPrecoUnit] = useState<number>(0)
   const [itemCustoUnit, setItemCustoUnit] = useState<number>(0)
+  const [comboboxProdutoAberto, setComboboxProdutoAberto] = useState(false)
+  const [indiceSugerido, setIndiceSugerido] = useState(0)
+  const pdvProdInputRef = useRef<HTMLInputElement>(null)
 
   // Pagamento e observações
   const [formaPagamento, setFormaPagamento] = useState<GraficaVenda['forma_pagamento']>('dinheiro')
@@ -107,13 +111,33 @@ export function ModalPdvCupom({
     }
   }
 
-  // Ao digitar na busca do produto: filtra o catálogo via <datalist> e, se o texto
-  // corresponder exatamente a um produto cadastrado (ou já estava selecionado e o
-  // usuário digitou por cima), preenche preço/custo automaticamente.
-  const handleDigitarDescricaoProduto = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const texto = e.target.value
+  // Sugestões do combobox de produto: filtro substring case-insensitive sobre
+  // nome, código/SKU e categoria (funciona digitando parte do meio da descrição).
+  const normalizarTextoBusca = (s: string) =>
+    (s || '')
+      .toString()
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+
+  const produtosSugeridos = useMemo(() => {
+    const q = normalizarTextoBusca(itemDescricao)
+    if (!q) return produtos.slice(0, 30)
+    return produtos
+      .filter((p) => {
+        const alvo = normalizarTextoBusca(
+          `${p.nome || ''} ${p.codigo || ''} ${p.categoria || ''} ${p.formato_tamanho || ''}`,
+        )
+        return alvo.includes(q)
+      })
+      .slice(0, 30)
+  }, [itemDescricao, produtos])
+
+  // Ao digitar na busca do produto: se o texto corresponde exatamente a um produto
+  // cadastrado, preenche preço/custo automaticamente; senão vira item livre.
+  const handleDigitarDescricaoProduto = (texto: string) => {
     setItemDescricao(texto)
-    const normaliza = (s: string) => s.trim().toLowerCase()
+    const normaliza = (s: string) => normalizarTextoBusca(s).trim()
     const prod =
       produtos.find((p) => p.id === itemProdutoId && normaliza(p.nome) === normaliza(texto)) ||
       produtos.find((p) => normaliza(p.nome) === normaliza(texto))
@@ -127,6 +151,36 @@ export function ModalPdvCupom({
     }
   }
 
+  // Ao escolher um produto na sugestão: vincula ao catálogo e preenche preço/custo
+  const handleSelecionarProdutoSugerido = (prod: GraficaProduto) => {
+    setItemProdutoId(prod.id)
+    setItemDescricao(prod.nome)
+    setItemPrecoUnit(prod.preco_venda || 0)
+    setItemCustoUnit(prod.custo_unitario || 0)
+    setComboboxProdutoAberto(false)
+    // devolve o foco para o campo de busca
+    requestAnimationFrame(() => pdvProdInputRef.current?.focus())
+  }
+
+  // Navegação por teclado no combobox de produtos (setas, Enter, Escape)
+  const handleTeclasComboboxProduto = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      if (!comboboxProdutoAberto) {
+        setComboboxProdutoAberto(true)
+        return
+      }
+      setIndiceSugerido((i) => Math.min(i + 1, Math.max(produtosSugeridos.length - 1, 0)))
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      setIndiceSugerido((i) => Math.max(i - 1, 0))
+    } else if (e.key === 'Enter' && comboboxProdutoAberto && produtosSugeridos[indiceSugerido]) {
+      e.preventDefault()
+      handleSelecionarProdutoSugerido(produtosSugeridos[indiceSugerido])
+    } else if (e.key === 'Escape' && comboboxProdutoAberto) {
+      setComboboxProdutoAberto(false)
+    }
+  }
   // Adicionar item à lista do cupom (antes de finalizar)
   const handleAdicionarItemAoCupom = (e: React.FormEvent) => {
     e.preventDefault()
@@ -355,28 +409,75 @@ export function ModalPdvCupom({
 
             <form onSubmit={handleAdicionarItemAoCupom} className="space-y-2">
               <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-end">
-                <div className="sm:col-span-4 space-y-1">
+                <div className="sm:col-span-4 space-y-1 relative">
                   <Label htmlFor="pdv-prod" className="text-[11px] text-gray-600">
                     Buscar Produto (digite parte da descrição)
                   </Label>
                   <Input
                     id="pdv-prod"
-                    list="pdv-prod-lista"
+                    ref={pdvProdInputRef}
                     inputMode="text"
                     autoComplete="off"
-                    placeholder="Digite para filtrar o catálogo..."
+                    role="combobox"
+                    aria-expanded={comboboxProdutoAberto}
+                    aria-controls="pdv-prod-opcoes"
+                    aria-autocomplete="list"
+                    placeholder="Digite parte do nome ou código..."
                     value={itemDescricao}
-                    onChange={handleDigitarDescricaoProduto}
+                    onChange={(e) => {
+                      handleDigitarDescricaoProduto(e.target.value)
+                      if (!comboboxProdutoAberto) setComboboxProdutoAberto(true)
+                      setIndiceSugerido(0)
+                    }}
+                    onFocus={() => setComboboxProdutoAberto(true)}
+                    onBlur={() => setComboboxProdutoAberto(false)}
+                    onKeyDown={handleTeclasComboboxProduto}
                     className="h-8 text-xs bg-white"
                   />
-                  <datalist id="pdv-prod-lista">
-                    {produtos.map((p) => (
-                      <option key={p.id} value={p.nome}>
-                        {formatCurrency(p.preco_venda)} (Estoque: {p.estoque_atual || 0})
-                      </option>
-                    ))}
-                  </datalist>
-                  {itemProdutoId && (
+                  {comboboxProdutoAberto && (
+                    <div
+                      id="pdv-prod-opcoes"
+                      role="listbox"
+                      aria-label="Sugestões de produtos"
+                      className="absolute z-30 top-full left-0 right-0 mt-1 rounded-md border bg-white shadow-md max-h-52 overflow-y-auto"
+                    >
+                      {produtosSugeridos.length === 0 ? (
+                        <p className="px-3 py-4 text-center text-[11px] text-gray-500">
+                          Nenhum produto encontrado — a descrição digitada será usada como item
+                          livre.
+                        </p>
+                      ) : (
+                        produtosSugeridos.map((p, idx) => (
+                          <button
+                            key={p.id}
+                            type="button"
+                            role="option"
+                            aria-selected={itemProdutoId === p.id}
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => handleSelecionarProdutoSugerido(p)}
+                            onMouseEnter={() => setIndiceSugerido(idx)}
+                            className={cn(
+                              'w-full flex items-start gap-2 text-left px-2.5 py-1.5 text-xs',
+                              idx === indiceSugerido ? 'bg-blue-50' : 'bg-white',
+                              itemProdutoId === p.id && 'border-l-2 border-blue-600',
+                            )}
+                          >
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate font-medium text-gray-900">
+                                {p.nome}
+                              </span>
+                              <span className="block text-[10px] text-gray-500">
+                                {p.codigo ? `${p.codigo} · ` : ''}
+                                {formatCurrency(p.preco_venda || 0)} · Estoque:{' '}
+                                {p.estoque_atual ?? 0}
+                              </span>
+                            </span>
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  )}
+                  {itemProdutoId && !comboboxProdutoAberto && (
                     <p className="text-[10px] text-emerald-700 font-medium">
                       Produto do catálogo selecionado (estoque terá baixa ao finalizar).
                     </p>
@@ -401,6 +502,7 @@ export function ModalPdvCupom({
                   <Label htmlFor="pdv-qtd" className="text-[11px] text-gray-600">
                     Qtd *
                   </Label>
+>>>>>>>
                   <Input
                     id="pdv-qtd"
                     type="number"

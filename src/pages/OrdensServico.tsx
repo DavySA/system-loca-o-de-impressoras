@@ -275,7 +275,7 @@ export default function OrdensServico() {
       // Localizar se o técnico responsável selecionado é um usuário
       const tecUser = tecnicos.find(
         (t) =>
-          (t.name || t.email) === formData.tecnico_responsavel ||
+          (t.name || t.email || '') === formData.tecnico_responsavel ||
           t.id === formData.tecnico_responsavel,
       )
 
@@ -784,8 +784,9 @@ export default function OrdensServico() {
                     <SelectContent>
                       <SelectItem value="nenhum">A definir</SelectItem>
                       {tecnicos.map((t) => (
-                        <SelectItem key={t.id} value={t.name || t.email}>
-                          {t.name || t.email} {t.role === 'tecnico' ? '(Técnico)' : ''}
+                        <SelectItem key={t.id} value={t.name || t.email || t.id}>
+                          {t.name || t.email || 'Sem nome'}{' '}
+                          {t.role === 'tecnico' ? '(Técnico)' : ''}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -794,7 +795,7 @@ export default function OrdensServico() {
                   <Input
                     id="os-tec"
                     placeholder="Nome do técnico"
-                    value={formData.tecnico_responsavel}
+                    value={formData.tecnico_responsavel || ''}
                     onChange={(e) =>
                       setFormData({ ...formData, tecnico_responsavel: e.target.value })
                     }
