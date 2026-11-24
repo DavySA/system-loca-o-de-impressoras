@@ -18,6 +18,10 @@ export interface AdminSetPasswordResult {
 export interface AdminUpdateUserResult {
   ok: boolean
   user?: AppUser
+  /** E-mail efetivo após a atualização (quando o e-mail foi enviado na requisição). */
+  email?: string
+  /** true quando o e-mail também foi sincronizado no registro do cliente do portal vinculado. */
+  email_sincronizado_cliente?: boolean
 }
 
 export interface AdminCreateUserResult {

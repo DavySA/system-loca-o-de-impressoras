@@ -19,6 +19,7 @@ import {
 import { usuariosService } from '@/services/usuarios'
 import { usuariosAdminService } from '@/services/usuariosAdmin'
 import { clientesService } from '@/services/clientes'
+import { useAuth } from '@/context/AuthContext'
 import { useToast } from '@/hooks/use-toast'
 import { getErrorMessage, extractFieldErrors } from '@/lib/pocketbase/errors'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
@@ -51,6 +52,13 @@ import {
 
 export default function Usuarios() {
   const { toast } = useToast()
+  const { user } = useAuth()
+  // Regra de edição de E-MAIL: administrador, ou operador/técnico com a função
+  // "usuarios" marcada. Os demais campos continuam exclusivos do administrador.
+  const podeEditarEmail =
+    (user?.role || '') === 'administrador' ||
+    ((user?.role === 'operador' || user?.role === 'tecnico') &&
+      resolverPermissoesUsuario(user || {}).includes('usuarios'))
 
   const [usuarios, setUsuarios] = useState<AppUser[]>([])
   const [clientes, setClientes] = useState<Cliente[]>([])
@@ -277,12 +285,15 @@ export default function Usuarios() {
       return
     }
 
-    if (!emailTrimmed.includes('@') || !emailTrimmed.includes('.')) {
-      setFieldErrors((prev) => ({ ...prev, email: 'Informe um e-mail válido.' }))
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(emailTrimmed)) {
+      setFieldErrors((prev) => ({
+        ...prev,
+        email: 'Informe um e-mail válido (ex.: nome@empresa.com.br).',
+      }))
       toast({
         variant: 'destructive',
         title: 'E-mail inválido',
-        description: 'Digite um endereço de e-mail válido.',
+        description: 'Digite um endereço de e-mail válido, no formato nome@empresa.com.br.',
       })
       return
     }
@@ -331,17 +342,31 @@ export default function Usuarios() {
     setIsSubmitting(true)
     try {
       if (editingUser) {
-        // Se não for cliente, passar string vazia para limpar o cliente_id no PocketBase
-        await usuariosAdminService.atualizar(editingUser.id, {
-          email: editingUser.email,
-          name: nameTrimmed,
-          role: calculatedRole,
-          cliente_id: isClienteAccount ? formData.cliente_id : '',
-          permissoes: finalPermissoes as unknown as string[],
-        })
+        const emailMudou = emailTrimmed.toLowerCase() !== (editingUser.email || '').toLowerCase()
+        const resp = await usuariosAdminService.atualizar(
+          editingUser.id,
+          podeEditarEmail
+            ? {
+                // Somente e-mail: operador/técnico com função "usuarios" pode alterá-lo
+                ...(emailMudou ? { email: emailTrimmed } : {}),
+              }
+            : {
+                email: emailTrimmed,
+                name: nameTrimmed,
+                role: calculatedRole,
+                cliente_id: isClienteAccount ? formData.cliente_id : '',
+                permissoes: finalPermissoes as unknown as string[],
+              },
+        )
+        const sincronizouCliente = resp?.email_sincronizado_cliente === true
         toast({
-          title: 'Usuário atualizado!',
-          description: 'Funções e perfil de acesso salvos com sucesso.',
+          title: emailMudou ? 'E-mail atualizado!' : 'Usuário atualizado!',
+          description: emailMudou
+            ? `E-mail de login alterado para ${emailTrimmed}.` +
+              (sincronizouCliente
+                ? ' O e-mail do cliente do portal vinculado também foi atualizado.'
+                : '')
+            : 'Funções e perfil de acesso salvos com sucesso.',
         })
       } else {
         const resp = await usuariosAdminService.criar({
@@ -368,7 +393,10 @@ export default function Usuarios() {
       if (Object.keys(fieldErrorsExtracted).length > 0) {
         setFieldErrors(fieldErrorsExtracted)
       }
-      const detalheErro = getErrorMessage(err)
+      // Erros das rotas administrativas chegam como { ok:false, error:'mensagem' }
+      // no corpo da resposta HTTP (não como erros de campo do PocketBase).
+      const corpoErro = (err?.response as any)?.error || (err as any)?.error
+      const detalheErro = (typeof corpoErro === 'string' && corpoErro) || getErrorMessage(err)
       toast({
         variant: 'destructive',
         title: 'Erro ao salvar usuário',
@@ -795,17 +823,29 @@ export default function Usuarios() {
                       }
                     }}
                     placeholder="Ex: carlos@empresa.com.br"
-                    disabled={!!editingUser}
-                    className={fieldErrors.email ? 'border-red-500 focus-visible:ring-red-500' : ''}
+                    autoComplete="off"
+                    className={
+                      fieldErrors.email
+                        ? 'border-red-500 focus-visible:ring-red-500'
+                        : editingUser && !podeEditarEmail
+                          ? 'bg-gray-100 text-gray-500'
+                          : ''
+                    }
+                    readOnly={!!editingUser && !podeEditarEmail}
                     required
                   />
                   {fieldErrors.email ? (
                     <p className="text-[11px] text-red-600 flex items-center gap-1">
                       <AlertCircle className="w-3.5 h-3.5" /> {fieldErrors.email}
                     </p>
+                  ) : editingUser && podeEditarEmail ? (
+                    <p className="text-[11px] text-blue-700">
+                      O e-mail de login pode ser alterado. Se ele já estiver em uso, o sistema
+                      avisará antes de salvar.
+                    </p>
                   ) : editingUser ? (
                     <p className="text-[11px] text-gray-400">
-                      O e-mail de login não pode ser alterado diretamente.
+                      O e-mail de login só pode ser alterado por administradores.
                     </p>
                   ) : null}
                 </div>
