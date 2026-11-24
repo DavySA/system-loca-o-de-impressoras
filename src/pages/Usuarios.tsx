@@ -481,12 +481,13 @@ export default function Usuarios() {
   }
 
   const filteredUsuarios = usuarios.filter((u) => {
-    const q = searchTerm.toLowerCase()
+    const q = (searchTerm || '').toLowerCase()
     const matchesSearch =
-      (u.name && u.name.toLowerCase().includes(q)) ||
+      ((u.name || '') as string).toLowerCase().includes(q) ||
       ((u.email || '') as string).toLowerCase().includes(q) ||
-      (!!u.expand?.cliente_id?.nome_razao_social &&
-        String(u.expand.cliente_id.nome_razao_social).toLowerCase().includes(q))
+      String(u.expand?.cliente_id?.nome_razao_social || '')
+        .toLowerCase()
+        .includes(q)
 
     const matchesRole = filterRole === 'todos' || u.role === filterRole
     return matchesSearch && matchesRole

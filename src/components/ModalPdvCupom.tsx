@@ -502,7 +502,6 @@ export function ModalPdvCupom({
                   <Label htmlFor="pdv-qtd" className="text-[11px] text-gray-600">
                     Qtd *
                   </Label>
->>>>>>>
                   <Input
                     id="pdv-qtd"
                     type="number"

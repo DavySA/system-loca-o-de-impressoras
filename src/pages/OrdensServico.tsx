@@ -275,8 +275,8 @@ export default function OrdensServico() {
       // Localizar se o técnico responsável selecionado é um usuário
       const tecUser = tecnicos.find(
         (t) =>
-          (t.name || t.email || '') === formData.tecnico_responsavel ||
-          t.id === formData.tecnico_responsavel,
+          String(t?.name || t?.email || '') === formData.tecnico_responsavel ||
+          t?.id === formData.tecnico_responsavel,
       )
 
       const novaOS = await ordensServicoService.create(
@@ -327,7 +327,7 @@ export default function OrdensServico() {
 
   // Filtragem
   const filteredOrdens = ordens.filter((os) => {
-    const q = searchTerm.toLowerCase()
+    const q = (searchTerm || '').toLowerCase()
     const clienteNome = os.expand?.cliente_id?.nome_razao_social || ''
     const osCode = formatOSCode(os.id)
 
