@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-18T00:05:22.114Z",
+  "generatedAt": "2026-11-18T00:08:35.085Z",
   "collections": [
     {
       "name": "users",
@@ -454,7 +454,7 @@
         {
           "name": "equipamento_id",
           "type": "relation",
-          "required": true,
+          "required": false,
           "system": false,
           "collectionRef": "equipamentos"
         },
@@ -594,6 +594,12 @@
         {
           "name": "fotos_comprovantes",
           "type": "file",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "solicitante",
+          "type": "text",
           "required": false,
           "system": false
         }
@@ -1254,8 +1260,8 @@
         }
       ],
       "indexes": [
-        "CREATE INDEX idx_grafica_prod_cat ON grafica_produtos (categoria)",
-        "CREATE INDEX idx_grafica_prod_nome ON grafica_produtos (nome)"
+        "CREATE INDEX idx_grafica_prod_nome ON grafica_produtos (nome)",
+        "CREATE INDEX `idx_grafica_prod_cat` ON `grafica_produtos` (categoria)"
       ]
     },
     {
