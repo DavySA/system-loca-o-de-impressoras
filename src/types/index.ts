@@ -120,6 +120,8 @@ export interface OrdemServico {
   data_conclusao?: string
   tecnico_responsavel?: string
   tecnico_user_id?: string
+  solicitante_nome?: string
+  solicitante_telefone?: string
   tipo_atendimento?: 'contrato' | 'particular'
   valor_servico?: number
   valor_pecas?: number

@@ -621,6 +621,13 @@ export default function OrdemServicoDetalhe() {
             <p className="text-xs text-gray-500 mt-0.5">
               Aberta em: {formatDate(ordem.data_abertura || ordem.created)} • Técnico:{' '}
               <strong>{ordem.tecnico_responsavel || 'Não atribuído'}</strong>
+              {ordem.solicitante_nome ? (
+                <>
+                  {' '}
+                  • Solicitante: <strong>{ordem.solicitante_nome}</strong>
+                  {ordem.solicitante_telefone ? ` (${ordem.solicitante_telefone})` : ''}
+                </>
+              ) : null}
             </p>
           </div>
         </div>
@@ -742,6 +749,45 @@ export default function OrdemServicoDetalhe() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Tipo de Atendimento + Solicitante */}
+      <Card className="border border-gray-200 shadow-xs">
+        <CardContent className="pt-4 pb-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
+            <div>
+              <span className="text-gray-400 block font-medium">Tipo de Atendimento:</span>
+              <span
+                className={`inline-block mt-0.5 px-2 py-0.5 rounded text-[11px] font-semibold ${
+                  ordem.tipo_atendimento === 'particular'
+                    ? 'bg-purple-100 text-purple-800'
+                    : 'bg-blue-100 text-blue-800'
+                }`}
+              >
+                {ordem.tipo_atendimento === 'particular' ? 'Particular' : 'Contrato'}
+              </span>
+            </div>
+            <div>
+              <span className="text-gray-400 block font-medium">Solicitante:</span>
+              <span className="text-gray-800 font-semibold">
+                {ordem.solicitante_nome || 'Não informado'}
+              </span>
+              {ordem.solicitante_telefone ? (
+                <p className="text-gray-500 mt-0.5">Tel: {ordem.solicitante_telefone}</p>
+              ) : null}
+            </div>
+            <div>
+              <span className="text-gray-400 block font-medium">Equipamento:</span>
+              <span className="text-gray-800 font-semibold">
+                {equipamento
+                  ? `${equipamento.marca} ${equipamento.modelo}`
+                  : ordem.tipo_atendimento === 'particular'
+                    ? 'Visita sem equipamento vinculado'
+                    : 'Não vinculado'}
+              </span>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Descrição do Problema */}
       <Card className="border border-gray-200 shadow-xs">

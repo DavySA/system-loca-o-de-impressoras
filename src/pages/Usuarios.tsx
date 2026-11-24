@@ -17,6 +17,7 @@ import {
   FileCheck,
 } from 'lucide-react'
 import { usuariosService } from '@/services/usuarios'
+import { usuariosAdminService } from '@/services/usuariosAdmin'
 import { clientesService } from '@/services/clientes'
 import { useToast } from '@/hooks/use-toast'
 import { getErrorMessage, extractFieldErrors } from '@/lib/pocketbase/errors'
@@ -331,11 +332,11 @@ export default function Usuarios() {
     try {
       if (editingUser) {
         // Se não for cliente, passar string vazia para limpar o cliente_id no PocketBase
-        await usuariosService.update(editingUser.id, {
+        await usuariosAdminService.atualizar(editingUser.id, {
           name: nameTrimmed,
           role: calculatedRole,
           cliente_id: isClienteAccount ? formData.cliente_id : '',
-          permissoes: finalPermissoes,
+          permissoes: finalPermissoes as unknown as string[],
         })
         toast({
           title: 'Usuário atualizado!',
@@ -382,6 +383,9 @@ export default function Usuarios() {
     setIsResetModalOpen(true)
   }
 
+  const nomeDoUsuario = (u: AppUser | null): string =>
+    (u?.name || '').trim() || (u?.email || '').trim() || 'usuário'
+
   const handleSendResetEmail = async () => {
     if (!userToReset) return
     setIsResetting(true)
@@ -389,14 +393,14 @@ export default function Usuarios() {
       await usuariosService.resetPasswordByEmail(userToReset.email)
       toast({
         title: 'E-mail de redefinição enviado!',
-        description: `Link de redefinição enviado para ${userToReset.email}.`,
+        description: `Link de redefinição para ${nomeDoUsuario(userToReset)} enviado para ${userToReset.email}.`,
       })
       setIsResetModalOpen(false)
     } catch (err: any) {
       toast({
         variant: 'destructive',
         title: 'Erro ao enviar e-mail',
-        description: err.message || 'Não foi possível disparar o e-mail de redefinição.',
+        description: getErrorMessage(err) || 'Não foi possível disparar o e-mail de redefinição.',
       })
     } finally {
       setIsResetting(false)
@@ -414,17 +418,29 @@ export default function Usuarios() {
     }
     setIsResetting(true)
     try {
-      await usuariosService.adminSetPassword(userToReset.id, newPassword)
-      toast({
-        title: 'Senha redefinida!',
-        description: `Nova senha aplicada com sucesso para ${userToReset.name || userToReset.email}.`,
-      })
-      setIsResetModalOpen(false)
+      const resp = await usuariosAdminService.setSenha(userToReset.id, newPassword)
+      if (resp?.ok) {
+        toast({
+          title: 'Senha redefinida!',
+          description: `Nova senha aplicada com sucesso para ${nomeDoUsuario(userToReset)}.`,
+        })
+        setUserToReset(null)
+        setIsResetModalOpen(false)
+        loadData()
+      } else {
+        toast({
+          variant: 'destructive',
+          title: 'Erro ao definir senha',
+          description: (resp as any)?.error || 'O servidor recusou a nova senha.',
+        })
+      }
     } catch (err: any) {
+      const msgServidor =
+        (err?.response as any)?.error || (err as any)?.error || getErrorMessage(err)
       toast({
         variant: 'destructive',
         title: 'Erro ao definir senha',
-        description: err.message || 'Não foi possível alterar a senha diretamente.',
+        description: msgServidor || 'Não foi possível alterar a senha diretamente.',
       })
     } finally {
       setIsResetting(false)
@@ -1076,7 +1092,7 @@ export default function Usuarios() {
                   >
                     {isResetting
                       ? 'Enviando...'
-                      : 'Enviar Link de Redefinição para ' + userToReset.email}
+                      : `Enviar Link de Redefinição para ${nomeDoUsuario(userToReset)}`}
                   </Button>
                 </div>
 

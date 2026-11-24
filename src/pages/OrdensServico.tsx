@@ -82,10 +82,13 @@ export default function OrdensServico() {
     cliente_id: '',
     equipamento_id: '',
     servico_id: '',
-    prioridade: 'media' as 'baixa' | 'media' | 'alta',
+    prioridade: 'media',
     descricao_problema: '',
     data_agendada: '',
     tecnico_responsavel: '',
+    solicitante_nome: '',
+    solicitante_telefone: '',
+    tipo_atendimento: 'contrato' as 'contrato' | 'particular',
   })
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -205,6 +208,10 @@ export default function OrdensServico() {
       descricao_problema: '',
       data_agendada: new Date().toISOString().split('T')[0],
       tecnico_responsavel: '',
+      solicitante_nome: '',
+      solicitante_telefone: '',
+      tipo_atendimento: 'contrato',
+      equipamento_id: '',
     })
     setFieldErrors({})
     setIsModalOpen(true)
@@ -216,7 +223,10 @@ export default function OrdensServico() {
 
     const errors: Record<string, string> = {}
     if (!formData.cliente_id) errors.cliente_id = 'Selecione um cliente.'
-    if (!formData.equipamento_id) errors.equipamento_id = 'Selecione um equipamento.'
+    // Equipamento só é obrigatório no atendimento por Contrato; em Particular é opcional
+    if (formData.tipo_atendimento === 'contrato' && !formData.equipamento_id) {
+      errors.equipamento_id = 'Selecione um equipamento (obrigatório no atendimento por contrato).'
+    }
     if (!formData.descricao_problema.trim()) {
       errors.descricao_problema = 'Descrição do problema é obrigatória.'
     }
@@ -228,7 +238,10 @@ export default function OrdensServico() {
 
     // Validação preventiva no frontend: checar se já existe O.S. não concluída para o equipamento
     const osAbertaMesmoEquip = ordens.find(
-      (os) => os.equipamento_id === formData.equipamento_id && os.status !== 'concluida',
+      (os) =>
+        formData.equipamento_id &&
+        os.equipamento_id === formData.equipamento_id &&
+        os.status !== 'concluida',
     )
     if (osAbertaMesmoEquip) {
       toast({
@@ -282,6 +295,11 @@ export default function OrdensServico() {
             : undefined,
           tecnico_responsavel: tecUser?.name || formData.tecnico_responsavel || undefined,
           tecnico_user_id: tecUser?.id || undefined,
+          solicitante_nome: formData.solicitante_nome.trim() || undefined,
+          solicitante_telefone: formData.solicitante_telefone.trim() || undefined,
+          tipo_atendimento: formData.tipo_atendimento,
+          // Em atendimento Particular a O.S. pode ser aberta sem equipamento
+          equipamento_id: formData.equipamento_id || undefined,
           status: 'aberta',
         },
         user?.name || 'Administrador',
@@ -477,6 +495,7 @@ export default function OrdensServico() {
                 <th className="py-3 px-4">Cliente</th>
                 <th className="py-3 px-4">Equipamento</th>
                 <th className="py-3 px-4">Serviço</th>
+                <th className="py-3 px-4">Atendimento</th>
                 <th className="py-3 px-4">Prioridade</th>
                 <th className="py-3 px-4">Abertura</th>
                 <th className="py-3 px-4">Status</th>
@@ -486,13 +505,13 @@ export default function OrdensServico() {
             <tbody className="divide-y divide-gray-100">
               {isLoading ? (
                 <tr>
-                  <td colSpan={8} className="py-8 text-center text-gray-500 text-sm">
+                  <td colSpan={9} className="py-8 text-center text-gray-500 text-sm">
                     Carregando ordens de serviço...
                   </td>
                 </tr>
               ) : filteredOrdens.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="py-8 text-center text-gray-500 text-sm">
+                  <td colSpan={9} className="py-8 text-center text-gray-500 text-sm">
                     Nenhuma ordem de serviço encontrada.
                   </td>
                 </tr>
@@ -525,10 +544,22 @@ export default function OrdensServico() {
                       {os.expand?.cliente_id?.nome_razao_social || 'Cliente'}
                     </td>
                     <td className="py-3.5 px-4 text-gray-700 text-xs">
-                      {os.expand?.equipamento_id?.modelo || 'Equipamento'}
+                      {os.expand?.equipamento_id?.modelo ||
+                        (os.tipo_atendimento === 'particular' ? '— (Particular)' : 'Equipamento')}
                     </td>
                     <td className="py-3.5 px-4 text-gray-600 text-xs max-w-xs truncate">
                       {os.expand?.servico_id?.nome || os.descricao_problema}
+                    </td>
+                    <td className="py-3.5 px-4">
+                      {os.tipo_atendimento === 'particular' ? (
+                        <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-violet-100 text-violet-800">
+                          Particular
+                        </span>
+                      ) : (
+                        <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-sky-100 text-sky-800">
+                          Contrato
+                        </span>
+                      )}
                     </td>
                     <td className="py-3.5 px-4">{getPrioBadge(os.prioridade)}</td>
                     <td className="py-3.5 px-4 text-gray-600 text-xs">
@@ -577,9 +608,36 @@ export default function OrdensServico() {
           <form onSubmit={handleSubmit} className="space-y-4 pt-2">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-1.5">
-                <Label htmlFor="os-cli">
-                  Cliente <span className="text-red-500">*</span>
-                </Label>
+                <Label htmlFor="os-tipo">Tipo de Atendimento</Label>
+                <Select
+                  value={formData.tipo_atendimento}
+                  onValueChange={(val) =>
+                    setFormData({
+                      ...formData,
+                      tipo_atendimento: val as 'contrato' | 'particular',
+                    })
+                  }
+                >
+                  <SelectTrigger id="os-tipo">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="contrato">Contrato</SelectItem>
+                    <SelectItem value="particular">Particular</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-[10px] text-gray-500">
+                  Em atendimentos Particulares o equipamento é opcional.
+                </p>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="os-eq">
+                  Equipamento{' '}
+                  {formData.tipo_atendimento === 'contrato' && (
+                    <span className="text-red-500">*</span>
+                  )}
+                </Label>{' '}
                 <Select
                   value={formData.cliente_id}
                   onValueChange={(val) => setFormData({ ...formData, cliente_id: val })}
@@ -695,6 +753,30 @@ export default function OrdensServico() {
               {fieldErrors.descricao_problema && (
                 <p className="text-xs text-red-600">{fieldErrors.descricao_problema}</p>
               )}
+            </div>
+
+            {/* Solicitante (opcional): quem pediu a abertura da O.S. */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1 border-t border-gray-100">
+              <div className="space-y-1.5">
+                <Label htmlFor="os-sol-nome">Solicitante (Opcional)</Label>
+                <Input
+                  id="os-sol-nome"
+                  placeholder="Nome de quem solicitou"
+                  value={formData.solicitante_nome}
+                  onChange={(e) => setFormData({ ...formData, solicitante_nome: e.target.value })}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="os-sol-tel">Telefone do Solicitante</Label>
+                <Input
+                  id="os-sol-tel"
+                  placeholder="(00) 00000-0000"
+                  value={formData.solicitante_telefone}
+                  onChange={(e) =>
+                    setFormData({ ...formData, solicitante_telefone: e.target.value })
+                  }
+                />
+              </div>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
