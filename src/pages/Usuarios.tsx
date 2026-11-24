@@ -333,6 +333,7 @@ export default function Usuarios() {
       if (editingUser) {
         // Se não for cliente, passar string vazia para limpar o cliente_id no PocketBase
         await usuariosAdminService.atualizar(editingUser.id, {
+          email: editingUser.email,
           name: nameTrimmed,
           role: calculatedRole,
           cliente_id: isClienteAccount ? formData.cliente_id : '',
@@ -343,19 +344,21 @@ export default function Usuarios() {
           description: 'Funções e perfil de acesso salvos com sucesso.',
         })
       } else {
-        await usuariosService.create({
+        const resp = await usuariosAdminService.criar({
           name: nameTrimmed,
           email: emailTrimmed,
           role: calculatedRole,
           cliente_id: isClienteAccount ? formData.cliente_id : '',
           password: formData.password || undefined,
-          permissoes: finalPermissoes,
+          permissoes: finalPermissoes as unknown as string[],
         })
         toast({
-          title: 'Usuário cadastrado com sucesso!',
-          description: formData.password
-            ? 'Acesso criado com a senha informada.'
-            : 'Acesso criado com sucesso no sistema.',
+          title: resp?.vinculado ? 'Conta existente vinculada!' : 'Usuário cadastrado com sucesso!',
+          description:
+            resp?.mensagem ||
+            (formData.password
+              ? 'Acesso criado com a senha informada.'
+              : 'Acesso criado com sucesso no sistema.'),
         })
       }
       setIsModalOpen(false)
@@ -418,7 +421,11 @@ export default function Usuarios() {
     }
     setIsResetting(true)
     try {
-      const resp = await usuariosAdminService.setSenha(userToReset.id, newPassword)
+      const resp = await usuariosAdminService.setSenha(
+        userToReset.id,
+        newPassword,
+        userToReset.email,
+      )
       if (resp?.ok) {
         toast({
           title: 'Senha redefinida!',
