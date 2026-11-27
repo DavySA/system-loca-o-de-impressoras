@@ -49,7 +49,7 @@ const fiscalSchema = z.object({
   telefone: z.string().max(30).optional().or(z.literal('')),
   email: z.string().email('E-mail inválido').optional().or(z.literal('')),
   serie_nota: z.string().max(10).optional().or(z.literal('')),
-  numero_proxima_nota: z.coerce.number().min(0).optional(),
+  numero_proxima_nota: z.any().optional(),
   ambiente: z.enum(['homologacao', 'producao']).optional(),
   cfop_padrao_servico: z.string().max(10).optional().or(z.literal('')),
   cfop_padrao_mercadoria: z.string().max(10).optional().or(z.literal('')),

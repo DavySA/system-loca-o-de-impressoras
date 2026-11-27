@@ -116,6 +116,9 @@ export default function GraficaRapida() {
   const [equipamentosLotadosIds, setEquipamentosLotadosIds] = useState<string[]>([])
   const [obsLotacao, setObsLotacao] = useState<string>('')
   const [isSalvandoLotacao, setIsSalvandoLotacao] = useState(false)
+  // Limite de desconto em % autorizado pelo admin para o PDV
+  const [limiteDescontoPdv, setLimiteDescontoPdv] = useState<string>('')
+  const [isSalvandoDesconto, setIsSalvandoDesconto] = useState(false)
 
   // Modais
   const [isModalAbrirCaixaOpen, setIsModalAbrirCaixaOpen] = useState(false)
@@ -274,6 +277,12 @@ export default function GraficaRapida() {
         setClienteGraficaId(cliId)
         setEquipamentosLotadosIds(grafCfg.equipamentos_lotados_ids || [])
         setObsLotacao(grafCfg.observacoes || '')
+        setLimiteDescontoPdv(
+          grafCfg.desconto_maximo_percentual === undefined ||
+            grafCfg.desconto_maximo_percentual === null
+            ? ''
+            : String(grafCfg.desconto_maximo_percentual),
+        )
         if (cliId) {
           const cliGraf = clis.find((c) => c.id === cliId)
           if (cliGraf) {
@@ -418,6 +427,45 @@ export default function GraficaRapida() {
       })
     } finally {
       setIsSalvandoLotacao(false)
+    }
+  }
+
+  // Salvar o limite de desconto (em %) autorizado pelo admin para o PDV
+  const handleSalvarLimiteDesconto = async () => {
+    const pct = limiteDescontoPdv.trim()
+    const valor = pct === '' ? null : Math.min(100, Math.max(0, Number(pct.replace(',', '.')) || 0))
+    if (pct !== '' && (valor === null || Number.isNaN(valor))) {
+      toast({
+        variant: 'destructive',
+        title: 'Percentual inválido',
+        description: 'Informe um número entre 0 e 100 (ou deixe vazio para não limitar).',
+      })
+      return
+    }
+    try {
+      setIsSalvandoDesconto(true)
+      await graficaService.salvarConfiguracao({
+        cliente_grafica_id: clienteGraficaId || null,
+        equipamentos_lotados_ids: equipamentosLotadosIds,
+        observacoes: obsLotacao,
+        desconto_maximo_percentual: valor ?? undefined,
+      })
+      toast({
+        title: 'Limite de desconto salvo!',
+        description:
+          valor === null || valor === undefined
+            ? 'O PDV não terá limite de desconto por percentual.'
+            : `O PDV só aceitará descontos de até ${valor}% do valor bruto do cupom.`,
+      })
+      loadData()
+    } catch (err: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Erro ao salvar o limite de desconto',
+        description: err.message || 'Verifique as permissões de administrador.',
+      })
+    } finally {
+      setIsSalvandoDesconto(false)
     }
   }
 
@@ -2041,6 +2089,46 @@ export default function GraficaRapida() {
               </Button>
             </CardHeader>
             <CardContent className="space-y-4">
+              {/* Limite de desconto do PDV (definido pelo administrador) */}
+              <div className="p-3 bg-amber-50/60 rounded-xl border border-amber-200 space-y-2">
+                <div className="flex items-center justify-between gap-3 flex-wrap">
+                  <div>
+                    <Label
+                      htmlFor="limite-desconto-pdv"
+                      className="text-xs font-bold text-amber-900"
+                    >
+                      Limite de Desconto do PDV (%)
+                    </Label>
+                    <p className="text-[11px] text-gray-600">
+                      Máximo de desconto que o operador pode aplicar em um cupom do PDV. Deixe vazio
+                      para não limitar.
+                    </p>
+                  </div>
+                  <div className="flex items-end gap-2">
+                    <Input
+                      id="limite-desconto-pdv"
+                      type="number"
+                      min="0"
+                      max="100"
+                      step="0.1"
+                      inputMode="decimal"
+                      placeholder="Ex: 10"
+                      value={limiteDescontoPdv}
+                      onChange={(e) => setLimiteDescontoPdv(e.target.value)}
+                      className="w-28 h-8 text-xs bg-white font-mono text-right"
+                    />
+                    <Button
+                      type="button"
+                      size="sm"
+                      disabled={isSalvandoDesconto}
+                      onClick={handleSalvarLimiteDesconto}
+                      className="bg-amber-600 hover:bg-amber-700 text-white text-xs h-8"
+                    >
+                      {isSalvandoDesconto ? 'Salvando...' : 'Salvar Limite'}
+                    </Button>
+                  </div>
+                </div>
+              </div>
               <div className="p-3 bg-blue-50/70 border border-blue-200 rounded-lg text-xs text-blue-900">
                 <p className="font-semibold mb-1">
                   Como funciona a lotação de equipamentos no STD:

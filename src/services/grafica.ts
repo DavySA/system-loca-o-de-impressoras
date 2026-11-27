@@ -30,6 +30,7 @@ export const graficaService = {
     equipamentos_lotados_ids: string[]
     cabecalho_cupom_padrao?: string
     observacoes?: string
+    desconto_maximo_percentual?: number
   }): Promise<GraficaConfiguracao> {
     const existing = await this.getConfiguracao()
     const payload: Record<string, any> = {
@@ -37,6 +38,11 @@ export const graficaService = {
       observacoes: data.observacoes || '',
       cabecalho_cupom_padrao: data.cabecalho_cupom_padrao ?? '',
       cliente_grafica_id: data.cliente_grafica_id ?? null,
+    }
+    // Limite de desconto do PDV: só envia quando informado, para não zerar
+    // um limite já salvo por outra tela (campo numérico opcional no PocketBase).
+    if (data.desconto_maximo_percentual !== undefined) {
+      payload.desconto_maximo_percentual = data.desconto_maximo_percentual
     }
 
     if (existing) {

@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { cn } from '@/lib/utils'
 import {
   Dialog,
@@ -35,10 +35,12 @@ import {
   CreditCard,
   FileText,
   AlertCircle,
+  Banknote,
 } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 import type { GraficaProduto, GraficaVenda, GraficaItemCupom, GraficaCaixa, Cliente } from '@/types'
 import { graficaService } from '@/services/grafica'
+import type { GraficaConfiguracao } from '@/types'
 import { formatCurrency } from '@/lib/formatters'
 
 interface ModalPdvCupomProps {
@@ -93,6 +95,28 @@ export function ModalPdvCupom({
   const [formaPagamento, setFormaPagamento] = useState<GraficaVenda['forma_pagamento']>('dinheiro')
   const [observacoes, setObservacoes] = useState<string>('')
   const [isSubmitting, setIsSubmitting] = useState(false)
+
+  // Desconto (em % ou em R$) e dinheiro (valor entregue / troco)
+  const [tipoDesconto, setTipoDesconto] = useState<'percentual' | 'reais'>('percentual')
+  const [descontoPercentual, setDescontoPercentual] = useState<number>(0)
+  const [descontoReais, setDescontoReais] = useState<number>(0)
+  const [valorEntregue, setValorEntregue] = useState<number>(0)
+
+  // Configuração da gráfica (limite de desconto definido pelo admin)
+  const [grafConfig, setGrafConfig] = useState<GraficaConfiguracao | null>(null)
+  useEffect(() => {
+    if (!open) return
+    let cancelado = false
+    graficaService
+      .getConfiguracao()
+      .then((cfg) => {
+        if (!cancelado) setGrafConfig(cfg)
+      })
+      .catch(() => {})
+    return () => {
+      cancelado = true
+    }
+  }, [open])
 
   // Ao selecionar um cliente cadastrado
   const handleSelecionarClienteCadastrado = (cliId: string) => {
@@ -239,24 +263,30 @@ export function ModalPdvCupom({
   )
   // Desconto: campo pode ser em R$ ou % — sempre convertido para R$ e validado
   // contra o limite definido pelo administrador (grafica_configuracao).
-  const descontoPercentual = Number(descontoPercentualState) || 0
+  const limiteDesconto = Number(grafConfig?.desconto_maximo_percentual) || 0
+  const descontoPercentualEfetivo =
+    tipoDesconto === 'percentual'
+      ? Math.max(0, descontoPercentual || 0)
+      : totalBruto > 0
+        ? ((Math.max(0, descontoReais || 0) / totalBruto) * 100).toFixed(2)
+        : 0
   const descontoCalculado =
-    descontoPercentual > 0
-      ? Number(((totalBruto * descontoPercentual) / 100).toFixed(2))
-      : Number(descontoReaisState) || 0
-  const limiteDesconto = grafConfig?.desconto_maximo_percentual ?? 0
-  const descontoExcedeLimite = limiteDesconto > 0 && descontoPercentual > limiteDesconto
+    tipoDesconto === 'percentual'
+      ? Number(((totalBruto * (descontoPercentual || 0)) / 100).toFixed(2))
+      : Number(Math.max(0, descontoReais || 0).toFixed(2))
+  const descontoExcedeLimite =
+    limiteDesconto > 0 && Number(descontoPercentualEfetivo) > limiteDesconto
   const descontoValido = Math.min(descontoCalculado, totalBruto)
-  const totalCupom = Math.max(0, totalBruto - descontoValido)
+  const totalCupom = Math.max(0, Number((totalBruto - descontoValido).toFixed(2)))
   const lucroEstimado = totalCupom - totalCusto
 
   // Dinheiro: valor entregue e troco
-  const valorEntregue = Number(valorEntregueState) || 0
+  const valorEntregueNumerico = Math.max(0, Number(valorEntregue) || 0)
   const troco =
-    formaPagamento === 'dinheiro' && valorEntregue > 0
-      ? Number((valorEntregue - totalCupom).toFixed(2))
+    formaPagamento === 'dinheiro' && valorEntregueNumerico > 0
+      ? Number((valorEntregueNumerico - totalCupom).toFixed(2))
       : 0
-  const valorInsuficiente = formaPagamento === 'dinheiro' && valorEntregue > 0 && troco < 0
+  const valorInsuficiente = formaPagamento === 'dinheiro' && valorEntregueNumerico > 0 && troco < 0
 
   // Finalizar e emitir cupom
   const handleFinalizarCupom = async () => {
@@ -280,11 +310,34 @@ export function ModalPdvCupom({
 
     setIsSubmitting(true)
     try {
+      if (descontoExcedeLimite) {
+        toast({
+          variant: 'destructive',
+          title: 'Desconto acima do limite permitido',
+          description: `O desconto máximo autorizado é de ${limiteDesconto}% do valor bruto do cupom.`,
+        })
+        return
+      }
+
+      if (valorInsuficiente) {
+        toast({
+          variant: 'destructive',
+          title: 'Valor entregue insuficiente',
+          description: `O valor entregue pelo cliente é menor que o total do cupom (${formatCurrency(totalCupom)}).`,
+        })
+        return
+      }
+
       const vendaCriada = await graficaService.registrarVendaCupom({
         caixa_id: caixaAberto.id,
         operador_user_id: operadorUserId,
         itens: itensCupom,
         forma_pagamento: formaPagamento,
+        desconto: descontoValido > 0 ? descontoValido : undefined,
+        valor_entregue:
+          formaPagamento === 'dinheiro' && valorEntregueNumerico > 0
+            ? valorEntregueNumerico
+            : undefined,
         cliente_nome: clienteNome.trim() || undefined,
         cliente_documento: clienteDocumento.trim() || undefined,
         cliente_telefone: clienteTelefone.trim() || undefined,
@@ -304,6 +357,10 @@ export function ModalPdvCupom({
       setClienteDocumento('')
       setClienteTelefone('')
       setObservacoes('')
+      setTipoDesconto('percentual')
+      setDescontoPercentual(0)
+      setDescontoReais(0)
+      setValorEntregue(0)
       onOpenChange(false)
 
       // Notificar para abrir impressão
@@ -637,6 +694,14 @@ export function ModalPdvCupom({
                     Total de Itens:{' '}
                     <strong>{itensCupom.reduce((a, b) => a + b.quantidade, 0)}</strong>
                   </span>
+                  {descontoValido > 0 && (
+                    <span>
+                      Desconto:{' '}
+                      <strong className="text-amber-700 font-mono">
+                        −{formatCurrency(descontoValido)}
+                      </strong>
+                    </span>
+                  )}
                   <span>
                     Lucro Estimado:{' '}
                     <strong className="text-emerald-700 font-mono">
@@ -644,13 +709,20 @@ export function ModalPdvCupom({
                     </strong>
                   </span>
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs uppercase text-gray-600 font-semibold">
-                    Valor Total do Cupom:
-                  </span>
-                  <span className="text-base font-extrabold text-blue-900 font-mono">
-                    {formatCurrency(totalCupom)}
-                  </span>
+                <div className="flex flex-col items-end gap-0.5">
+                  {descontoValido > 0 && (
+                    <span className="text-[11px] text-gray-500 line-through font-mono">
+                      {formatCurrency(totalBruto)}
+                    </span>
+                  )}
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs uppercase text-gray-600 font-semibold">
+                      Valor Total do Cupom:
+                    </span>
+                    <span className="text-base font-extrabold text-blue-900 font-mono">
+                      {formatCurrency(totalCupom)}
+                    </span>
+                  </div>
                 </div>
               </div>
             )}
@@ -693,6 +765,122 @@ export function ModalPdvCupom({
                 className="h-8 text-xs bg-white"
               />
             </div>
+          </div>
+
+          {/* BLOCO 5: DESCONTO E PAGAMENTO EM DINHEIRO */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+            <div className="p-3 bg-amber-50/60 rounded-xl border border-amber-200 space-y-2">
+              <span className="font-semibold text-amber-900 text-xs flex items-center gap-1.5">
+                <AlertCircle className="w-4 h-4 text-amber-600" />
+                Desconto (opcional)
+              </span>
+              <div className="flex items-end gap-2">
+                <div className="space-y-1">
+                  <Label htmlFor="pdv-desc-tipo" className="text-[11px] text-gray-600">
+                    Tipo
+                  </Label>
+                  <Select value={tipoDesconto} onValueChange={(val: any) => setTipoDesconto(val)}>
+                    <SelectTrigger id="pdv-desc-tipo" className="h-8 text-xs bg-white w-[92px]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="percentual">%</SelectItem>
+                      <SelectItem value="reais">R$</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex-1 space-y-1">
+                  <Label htmlFor="pdv-desc-valor" className="text-[11px] text-gray-600">
+                    Valor do desconto {tipoDesconto === 'percentual' ? '(%)' : '(R$)'}
+                  </Label>
+                  <Input
+                    id="pdv-desc-valor"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    max={tipoDesconto === 'percentual' ? 100 : undefined}
+                    inputMode="decimal"
+                    value={tipoDesconto === 'percentual' ? descontoPercentual : descontoReais}
+                    onChange={(e) => {
+                      const v = Math.max(0, parseFloat(e.target.value) || 0)
+                      if (tipoDesconto === 'percentual') setDescontoPercentual(v)
+                      else setDescontoReais(v)
+                    }}
+                    className={cn(
+                      'h-8 text-xs bg-white font-mono text-right',
+                      descontoExcedeLimite && 'border-red-500 focus-visible:ring-red-500',
+                    )}
+                  />
+                </div>
+              </div>
+              {limiteDesconto > 0 && (
+                <p className="text-[10px] text-gray-500">
+                  Desconto máximo autorizado pelo administrador: {limiteDesconto}%
+                </p>
+              )}
+              {descontoExcedeLimite && (
+                <p className="text-[10px] text-red-700 font-semibold">
+                  O desconto informado excede o limite máximo de {limiteDesconto}% autorizado pelo
+                  administrador. Reduza o desconto para finalizar a venda.
+                </p>
+              )}
+              {descontoValido > 0 && !descontoExcedeLimite && (
+                <p className="text-[10px] text-emerald-700 font-medium">
+                  Desconto aplicado: {formatCurrency(descontoValido)} — Total com desconto:{' '}
+                  {formatCurrency(totalCupom)}
+                </p>
+              )}
+            </div>
+
+            {formaPagamento === 'dinheiro' && (
+              <div className="p-3 bg-emerald-50/60 rounded-xl border border-emerald-200 space-y-2">
+                <span className="font-semibold text-emerald-900 text-xs flex items-center gap-1.5">
+                  <Banknote className="w-4 h-4 text-emerald-600" />
+                  Pagamento em Dinheiro
+                </span>
+                <div className="space-y-1">
+                  <Label htmlFor="pdv-entregue" className="text-[11px] text-gray-600">
+                    Valor entregue pelo cliente (R$)
+                  </Label>
+                  <Input
+                    id="pdv-entregue"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    inputMode="decimal"
+                    placeholder="Ex: 100,00"
+                    value={valorEntregue || ''}
+                    onChange={(e) => setValorEntregue(Math.max(0, parseFloat(e.target.value) || 0))}
+                    className="h-8 text-xs bg-white font-mono text-right"
+                  />
+                </div>
+                {valorEntregueNumerico > 0 && (
+                  <div
+                    className={cn(
+                      'flex items-center justify-between rounded-lg px-3 py-2 border font-semibold',
+                      valorInsuficiente
+                        ? 'bg-red-50 border-red-300 text-red-800'
+                        : 'bg-white border-emerald-300 text-emerald-900',
+                    )}
+                  >
+                    <span className="text-xs">{valorInsuficiente ? 'FALTA' : 'TROCO'}</span>
+                    <span
+                      className={cn(
+                        'text-base font-extrabold font-mono',
+                        valorInsuficiente ? 'text-red-700' : 'text-emerald-700',
+                      )}
+                    >
+                      {formatCurrency(Math.abs(troco))}
+                    </span>
+                  </div>
+                )}
+                {valorInsuficiente && (
+                  <p className="text-[10px] text-red-700 font-semibold">
+                    O valor entregue é menor que o total do cupom ({formatCurrency(totalCupom)}).
+                  </p>
+                )}
+              </div>
+            )}
           </div>
         </div>
 

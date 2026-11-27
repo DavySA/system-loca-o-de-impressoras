@@ -374,6 +374,7 @@ export interface GraficaConfiguracao {
   equipamentos_lotados_ids: string[]
   cabecalho_cupom_padrao?: string
   observacoes?: string
+  desconto_maximo_percentual?: number
   created: string
   updated: string
   expand?: {
@@ -473,6 +474,9 @@ export interface GraficaVenda {
   custo_total?: number
   lucro_total?: number
   forma_pagamento?: 'dinheiro' | 'pix' | 'cartao_debito' | 'cartao_credito' | 'a_prazo' | 'outro'
+  desconto?: number
+  valor_entregue?: number
+  troco?: number
   suprimento_baixado_id?: string
   quantidade_insumo_baixada?: number
   cliente_nome?: string

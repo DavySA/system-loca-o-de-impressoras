@@ -60,6 +60,15 @@ export function VendaCupomRelatorio({
   const totalGeral = venda.valor_total || itens.reduce((acc, it) => acc + it.valor_total, 0)
   const totalItensQtd = itens.reduce((acc, it) => acc + (it.quantidade || 1), 0)
 
+  // Desconto e troco: valor_total da venda já vem líquido do desconto
+  const desconto = Math.max(0, Number(venda.desconto) || 0)
+  const bruto = Number((totalGeral + desconto).toFixed(2))
+  const troco = Math.max(0, Number(venda.troco) || 0)
+  const valorEntregue = Math.max(0, Number(venda.valor_entregue) || 0)
+  const temPagamentoDinheiro = (venda.forma_pagamento || 'dinheiro') === 'dinheiro'
+  const temDesconto = desconto > 0
+  const temTroco = temPagamentoDinheiro && (troco > 0 || valorEntregue > 0)
+
   const containerClasses =
     formato === 'bobina' ? 'max-w-[400px] p-4 text-[11px]' : 'max-w-[540px] p-6 text-[12px]'
 
@@ -207,10 +216,34 @@ export function VendaCupomRelatorio({
           <span className="text-gray-600">QUANTIDADE TOTAL DE ITENS:</span>
           <span className="font-mono font-semibold">{totalItensQtd}</span>
         </div>
+        {temDesconto && (
+          <div className="flex justify-between text-[10.5px]">
+            <span className="text-gray-600">SUBTOTAL:</span>
+            <span className="font-mono">{formatCurrency(bruto)}</span>
+          </div>
+        )}
+        {temDesconto && (
+          <div className="flex justify-between text-[10.5px] font-semibold text-amber-800">
+            <span>DESCONTO:</span>
+            <span className="font-mono">−{formatCurrency(desconto)}</span>
+          </div>
+        )}
         <div className="flex justify-between text-xs font-bold pt-1 border-t border-gray-400">
           <span className="text-gray-900 uppercase">VALOR TOTAL DO CUPOM:</span>
           <span className="font-mono text-sm text-blue-900">{formatCurrency(totalGeral)}</span>
         </div>
+        {temTroco && valorEntregue > 0 && (
+          <div className="flex justify-between text-[10.5px]">
+            <span className="text-gray-600">VALOR ENTREGUE:</span>
+            <span className="font-mono">{formatCurrency(valorEntregue)}</span>
+          </div>
+        )}
+        {temTroco && (
+          <div className="flex justify-between text-[10.5px] font-semibold text-emerald-800">
+            <span>TROCO:</span>
+            <span className="font-mono">{formatCurrency(troco)}</span>
+          </div>
+        )}
       </div>
 
       {/* OBSERVAÇÕES */}
