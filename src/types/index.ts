@@ -13,6 +13,7 @@ export type ModuloSistema =
   | 'servicos'
   | 'usuarios'
   | 'personalizar'
+  | 'fiscal'
   | 'meu_contrato'
 
 export interface AppUser {

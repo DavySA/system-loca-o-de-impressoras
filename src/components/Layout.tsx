@@ -20,6 +20,7 @@ import {
   Globe,
   Share2,
   Target,
+  FileCheck2,
 } from 'lucide-react'
 import { useAuth } from '@/context/AuthContext'
 import { ordensServicoService } from '@/services/ordensServico'
@@ -302,6 +303,13 @@ export default function Layout({ children }: LayoutProps) {
       modulo: 'personalizar',
       ocultarParaCliente: true,
     },
+    {
+      label: 'Módulo Fiscal',
+      path: '/fiscal',
+      icon: FileCheck2,
+      modulo: 'fiscal',
+      ocultarParaCliente: true,
+    },
   ]
 
   const navItems = rawMenuItems.filter((item) => {
@@ -337,6 +345,7 @@ export default function Layout({ children }: LayoutProps) {
     if (path.startsWith('/servicos')) return 'Catálogo de Serviços'
     if (path.startsWith('/usuarios')) return 'Gerenciamento de Usuários'
     if (path.startsWith('/personalizar')) return 'Personalizar Empresa & Cabeçalho'
+    if (path.startsWith('/fiscal')) return 'Módulo Fiscal (NF-e)'
     if (path.startsWith('/relatorios')) return 'Relatórios Mensais'
     if (path.startsWith('/suprimentos')) return 'Gestão de Suprimentos & Peças'
     return 'STD'

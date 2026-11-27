@@ -232,12 +232,31 @@ export function ModalPdvCupom({
   }
 
   // Cálculos do cupom
-  const totalCupom = itensCupom.reduce((acc, it) => acc + (it.valor_total ?? it.subtotal ?? 0), 0)
+  const totalBruto = itensCupom.reduce((acc, it) => acc + (it.valor_total ?? it.subtotal ?? 0), 0)
   const totalCusto = itensCupom.reduce(
     (acc, it) => acc + (it.custo_total ?? (it.custo_unitario || 0) * it.quantidade),
     0,
   )
+  // Desconto: campo pode ser em R$ ou % — sempre convertido para R$ e validado
+  // contra o limite definido pelo administrador (grafica_configuracao).
+  const descontoPercentual = Number(descontoPercentualState) || 0
+  const descontoCalculado =
+    descontoPercentual > 0
+      ? Number(((totalBruto * descontoPercentual) / 100).toFixed(2))
+      : Number(descontoReaisState) || 0
+  const limiteDesconto = grafConfig?.desconto_maximo_percentual ?? 0
+  const descontoExcedeLimite = limiteDesconto > 0 && descontoPercentual > limiteDesconto
+  const descontoValido = Math.min(descontoCalculado, totalBruto)
+  const totalCupom = Math.max(0, totalBruto - descontoValido)
   const lucroEstimado = totalCupom - totalCusto
+
+  // Dinheiro: valor entregue e troco
+  const valorEntregue = Number(valorEntregueState) || 0
+  const troco =
+    formaPagamento === 'dinheiro' && valorEntregue > 0
+      ? Number((valorEntregue - totalCupom).toFixed(2))
+      : 0
+  const valorInsuficiente = formaPagamento === 'dinheiro' && valorEntregue > 0 && troco < 0
 
   // Finalizar e emitir cupom
   const handleFinalizarCupom = async () => {

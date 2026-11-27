@@ -122,6 +122,14 @@ export const TODOS_MODULOS: ModuloInfo[] = [
     grupo: 'gestao',
   },
   {
+    id: 'fiscal',
+    nome: 'Módulo Fiscal (NF-e)',
+    descricao: 'Certificado digital A1 e dados fiscais da empresa emitente',
+    icon: FileCheck,
+    corBadge: 'bg-blue-50 text-blue-700 border-blue-200',
+    grupo: 'gestao',
+  },
+  {
     id: 'meu_contrato',
     nome: 'Meu Contrato (Portal do Cliente)',
     descricao: 'Acesso ao contrato digitalizado, faturamento e chamados próprios',
@@ -153,6 +161,7 @@ export const PRESETS_PERMISSOES = {
     'relatorios',
     'usuarios',
     'personalizar',
+    'fiscal',
   ] as ModuloSistema[],
   operador: [
     'clientes',

@@ -428,6 +428,8 @@ export const graficaService = {
       valor_total?: number
     }>
     forma_pagamento?: GraficaVenda['forma_pagamento']
+    desconto?: number
+    valor_entregue?: number
     cliente_nome?: string
     cliente_documento?: string
     cliente_telefone?: string
@@ -437,6 +439,9 @@ export const graficaService = {
     if (!data.itens || data.itens.length === 0) {
       throw new Error('O cupom deve conter pelo menos um produto ou serviço.')
     }
+
+    const desconto = Math.max(0, Number(data.desconto) || 0)
+    const valorEntregue = Math.max(0, Number(data.valor_entregue) || 0)
 
     const agora = new Date()
     const numeroCupom = `CUP-${agora.getFullYear()}${String(agora.getMonth() + 1).padStart(2, '0')}${String(agora.getDate()).padStart(2, '0')}-${String(Math.floor(Math.random() * 9000) + 1000)}`
@@ -519,6 +524,8 @@ export const graficaService = {
     }
 
     const lucroTotalGeral = valorTotalGeral - custoTotalGeral
+    const valorFinal = Math.max(0, valorTotalGeral - desconto)
+    const troco = data.forma_pagamento === 'dinheiro' ? Math.max(0, valorEntregue - valorFinal) : 0
     const primeiroItem = itensProcessados[0]
     const descricaoResumo =
       itensProcessados.length === 1
@@ -533,10 +540,14 @@ export const graficaService = {
       descricao: descricaoResumo,
       quantidade: itensProcessados.reduce((acc, it) => acc + it.quantidade, 0),
       preco_unitario: itensProcessados.length === 1 ? primeiroItem.preco_unitario : valorTotalGeral,
-      valor_total: valorTotalGeral,
+      valor_total: valorFinal,
       custo_total: custoTotalGeral,
-      lucro_total: lucroTotalGeral,
+      lucro_total: valorFinal - custoTotalGeral,
       forma_pagamento: data.forma_pagamento || 'dinheiro',
+      desconto: desconto || undefined,
+      valor_entregue:
+        data.forma_pagamento === 'dinheiro' && valorEntregue > 0 ? valorEntregue : undefined,
+      troco: troco > 0 ? troco : undefined,
       suprimento_baixado_id: primeiroItem.suprimento_baixado_id,
       quantidade_insumo_baixada: primeiroItem.quantidade_insumo_baixada,
       cliente_nome: data.cliente_nome?.trim() || 'Balcão / Cliente Final',
@@ -550,7 +561,7 @@ export const graficaService = {
     // Atualizar totais do caixa
     try {
       const caixa = await pb.collection('grafica_caixas').getOne<GraficaCaixa>(data.caixa_id)
-      const novoTotal = (caixa.total_entradas || 0) + valorTotalGeral
+      const novoTotal = (caixa.total_entradas || 0) + valorFinal
       const novoCusto = (caixa.total_custo_insumos || 0) + custoTotalGeral
       const novoLucro = novoTotal - novoCusto
       await pb.collection('grafica_caixas').update(data.caixa_id, {

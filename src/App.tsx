@@ -25,6 +25,7 @@ import GraficaRapida from './pages/GraficaRapida'
 import ComissoesMetas from './pages/ComissoesMetas'
 import Usuarios from './pages/Usuarios'
 import Personalizar from './pages/Personalizar'
+import ModuloFiscal from './pages/ModuloFiscal'
 import NotFound from './pages/NotFound'
 
 export function App() {
@@ -186,6 +187,13 @@ export function App() {
             }
           >
             <Route path="/personalizar" element={<Personalizar />} />
+          </Route>
+
+          {/* Módulo Fiscal (NF-e: certificado A1 + dados fiscais) */}
+          <Route
+            element={<ProtectedRoute requiredModulo="fiscal" allowedRoles={['administrador']} />}
+          >
+            <Route path="/fiscal" element={<ModuloFiscal />} />
           </Route>
 
           {/* Rota 404 Não Encontrada */}
